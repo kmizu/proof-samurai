@@ -1,27 +1,34 @@
-# Getting Started with Proof Samurai
+# Getting Started
 
-Welcome! **Proof Samurai** lets you write everyday functional programs in familiar **Scala 3 brace syntax** (no indentation-sensitive rules), prove properties about them with a **small, sound Trusted Kernel**, and **extract** them into clean, fast **Scala 3, TypeScript, or JavaScript** with all proofs erased at zero runtime cost.
+**Proof Samurai** is a dependently-typed proof assistant using whitespace-insensitive **Scala 3 brace syntax**. You write functional programs, prove properties checked by a small **Trusted Kernel**, and extract proof-erased **Scala 3**, **TypeScript**, or **JavaScript** code with zero proof overhead at runtime.
 
-You do **not** need a PhD in type theory to get started. If you know basic Scala, TypeScript, Rust, or Haskell, you will feel right at home in 10 minutes.
+Basic familiarity with Scala, TypeScript, Rust, or Haskell is enough to get started.
 
-## 1. Launch Proof Samurai Studio (Recommended)
+## 1. Setup and Proof Samurai Studio
 
-The friendliest way to explore Proof Samurai is the built-in interactive Web IDE:
+Proof Samurai requires a JDK (Java 17 or newer recommended) and `sbt`. Verify your setup with:
+
+```bash
+sbt test
+```
+
+To explore interactively, start the built-in local Web IDE (Proof Samurai Studio):
 
 ```bash
 sbt "run studio"
 ```
 
-Open **http://localhost:8080** in your browser. You will get:
-- A live Scala 3 brace editor with instant kernel verification (`Ctrl+Enter`)
-- A **100% Axiom-Free** green shield badge
-- Interactive `?hole` cards with 1-click tactic suggestions
-- A visual **Interactive Proof Tree** where you can branch and backtrack
-- A 1-click **Code Extraction** panel (Scala 3, TypeScript, JavaScript)
+Open `http://localhost:8080` in your browser. Studio provides:
 
-## 2. Your First Data Type & Function
+- A Scala 3 brace syntax editor with live kernel verification (`Ctrl+Enter`)
+- Axiom-usage reporting (zero-axiom strict verification status)
+- Proof hole (`?hole`) inspection with goal views and tactic suggestions
+- A branching Interactive Proof Tree for stepping and backtracking
+- A Code Extraction panel for Scala 3, TypeScript, and JavaScript
 
-Write ordinary Scala 3 `enum`s and `def`s — always using explicit `{ ... }` braces:
+## 2. Data Types and Functions
+
+Define `enum` data types and `def` functions using explicit `{ ... }` blocks:
 
 ```scala
 import Prelude.*
@@ -34,13 +41,14 @@ def doubleValue(number: Nat): Nat = {
 #eval doubleValue(3)
 ```
 
-Notice `#eval doubleValue(3)` prints `6` directly — Proof Samurai computes with your functions inside its normalizer (NbE).
+`#eval doubleValue(3)` evaluates the expression inside the kernel's normalizer (NbE: Normalization by Evaluation) and prints `6`.
 
-## 3. Your First Theorem (Three Friendly Styles!)
+## 3. Proof Styles
 
-Proof Samurai never forces one rigid proof style. Pick whichever reads best:
+Proof Samurai supports several proof styles depending on the theorem.
 
-### Style A: One-Word Automation (`refl`, `decide`, `arith`, `auto`)
+### Computation and Automation (`refl`, `decide`, `arith`, `auto`)
+
 ```scala
 import Prelude.*
 import Nat.*
@@ -55,8 +63,9 @@ theorem rearrange(first: Nat, second: Nat, third: Nat):
 }
 ```
 
-### Style B: Readable Equational Reasoning (`calc { ... }`)
-Great for explaining *why* an equation holds to teammates (and AI reviewers!):
+### Equational Reasoning (`calc { ... }`)
+
+Use `calc` when you want each intermediate algebraic step to remain explicit and readable:
 
 ```scala
 import Prelude.*
@@ -73,7 +82,8 @@ theorem lengthThreeWay[Element](first: List[Element], second: List[Element], thi
 }
 ```
 
-### Style C: Structural Induction (`induction`)
+### Structural Induction (`induction`)
+
 ```scala
 import Prelude.*
 import Nat.*
@@ -90,9 +100,9 @@ theorem addZeroRightDemo(value: Nat): value + 0 === value = by {
 }
 ```
 
-## 4. Stuck on a Proof? Drop a `?hole`!
+## 4. Inspecting Goals with `?hole`
 
-Whenever you aren't sure what to write next, just put `?todo` inside your proof:
+Place a named hole such as `?todo` wherever a proof is incomplete:
 
 ```scala
 import Prelude.*
@@ -103,19 +113,21 @@ theorem helpMe(left: Nat, right: Nat): left + right === right + left = by {
 }
 ```
 
-Then run `sbt "run goals yourfile.samurai"` (or press `Ctrl+Enter` in Studio). Proof Samurai shows your exact hypotheses, the simplified goal `⊢ ...`, and **ranked tactic suggestions**!
+Run `sbt "run goals yourfile.samurai"` (or press `Ctrl+Enter` in Studio) to inspect the local hypotheses, normalized goal `⊢ ...`, and candidate tactics.
 
-## 5. Extract Verified Code
+## 5. Extracting Verified Code
 
-Everything living in **`Prop`** (theorems, `===` equalities, `Sorted`, `Le`, `And`, `Or`) is **compile-time evidence only**. When you extract your code, all `Prop` proofs vanish completely:
+Everything in `Prop` (theorems, `===`, `Sorted`, `Le`, `And`, `Or`) is compile-time evidence and is erased completely during extraction:
 
 ```bash
 sbt "run extract stdlib/Sorting.samurai --target scala3 --module VerifiedSorting --strict"
 ```
 
-The `--strict` flag guarantees **zero axioms and zero `sorry`** were used anywhere in the dependency chain.
+The `--strict` flag ensures that zero axioms and zero `sorry` placeholders appear anywhere in the dependency chain.
 
 ## Next Steps
-- Explore the **Friendly Tactic Cookbook** for recipes organized by goal shape.
-- Check the **Kindful Error Guide** whenever the kernel rejects something — every rejection protects soundness!
-- Try `sbt "run verify-project . --strict"` to verify all 12 standard library & example files at once.
+
+- See the **Language Reference** for full syntax, operators, and tactic listings.
+- Use the **Tactic Cookbook** to look up tactics by goal shape.
+- Consult the **Error & Troubleshooting Guide** when the kernel rejects a definition or proof.
+- Run `sbt "run verify-project . --strict"` to verify all standard library and example files.

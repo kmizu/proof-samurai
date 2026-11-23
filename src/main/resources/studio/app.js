@@ -1,7 +1,9 @@
 (() => {
   const state = {
+    lang: "en",
     examples: [],
     docs: [],
+    activeDocId: null,
     symbols: [],
     extractTarget: "scala3",
     lastExtractedCode: "",
@@ -9,6 +11,63 @@
     proverNodes: [],
     activeProverStateId: null,
     activeFile: "Showcase.samurai"
+  };
+
+  const I18N = {
+    en: {
+      tabEditor: "Editor & Infoview",
+      tabProver: "Proof Tree",
+      tabDocs: "Documentation",
+      btnVerify: "Verify",
+      insertLabel: "Insert:",
+      subInfoview: "Infoview",
+      subExtract: "Code Extraction",
+      subSymbols: "Symbols",
+      strictLabel: "Strict (0 axioms)",
+      btnExtract: "Extract",
+      btnCopy: "Copy",
+      btnDownload: "Download",
+      proverSessionTitle: "Interactive Proof Session",
+      presetLabel: "Preset Theorem",
+      statementLabel: "Theorem Statement",
+      btnStartProof: "Start Proof",
+      btnAutoSolve: "Auto Solve",
+      btnCopyTrace: "Copy by { ... } Script",
+      btnStep: "Step",
+      proverTreeTitle: "Proof Exploration Tree",
+      proverTreeHint: "Click a node to branch or backtrack",
+      docsListTitle: "Documentation",
+      themeDark: "Dark",
+      themeLight: "Light",
+      loadInEditor: "Load in Editor"
+    },
+    ja: {
+      tabEditor: "エディタ・検証結果",
+      tabProver: "証明ツリー",
+      tabDocs: "ドキュメント",
+      btnVerify: "検証",
+      insertLabel: "挿入:",
+      subInfoview: "検証結果",
+      subExtract: "コード抽出",
+      subSymbols: "シンボル一覧",
+      strictLabel: "厳密モード（公理 0）",
+      btnExtract: "抽出",
+      btnCopy: "コピー",
+      btnDownload: "ダウンロード",
+      proverSessionTitle: "対話的証明セッション",
+      presetLabel: "プリセット定理",
+      statementLabel: "定理の主張",
+      btnStartProof: "証明を開始",
+      btnAutoSolve: "自動証明",
+      btnCopyTrace: "by { ... } をコピー",
+      btnStep: "適用",
+      proverTreeTitle: "証明探索ツリー",
+      proverTreeHint: "ノードをクリックして分岐・バックトラック",
+      docsListTitle: "ドキュメント",
+      themeDark: "ダーク",
+      themeLight: "ライト",
+      loadInEditor: "エディタで開く"
+    }
   };
 
   const SNIPPETS = {
@@ -20,9 +79,10 @@
   };
 
   const $ = (id) => document.getElementById(id);
+  const tr = () => I18N[state.lang] || I18N.en;
 
   function escapeHtml(str) {
-    return str
+    return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
@@ -43,6 +103,20 @@
       if (op) return `<span class="tok-op">${op}</span>`;
       return m;
     });
+  }
+
+  function applyI18n() {
+    const dict = tr();
+    document.documentElement.lang = state.lang;
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      const key = el.dataset.i18n;
+      if (dict[key]) el.textContent = dict[key];
+    });
+    document.querySelectorAll(".lang-btn").forEach((b) => {
+      b.classList.toggle("active", b.dataset.lang === state.lang);
+    });
+    const theme = document.documentElement.dataset.theme || "light";
+    $("btn-theme").textContent = theme === "dark" ? dict.themeLight : dict.themeDark;
   }
 
   function syncEditorVisuals() {
@@ -105,8 +179,8 @@
     const source = $("code-editor").value;
     const badge = $("trust-badge");
     badge.className = "badge badge-neutral";
-    badge.textContent = "Checking…";
-    $("status-line").textContent = "Verifying through Trusted Kernel…";
+    badge.textContent = "Checking...";
+    $("status-line").textContent = "Verifying through Trusted Kernel...";
 
     try {
       const data = await apiPost("/api/check", {
@@ -132,7 +206,7 @@
 
     if (data.diagnostics && data.diagnostics.length > 0) {
       badge.className = "badge badge-crimson";
-      badge.textContent = "✗ Kernel Rejected";
+      badge.textContent = "Rejected";
       banner.className = "card banner banner-crimson";
       banner.innerHTML = `<strong>Verification failed</strong> (${data.elapsedMs}ms) — Trusted Kernel rejected an invalid step.`;
 
@@ -141,7 +215,7 @@
       $("errors-list").innerHTML = `
         <div class="card">
           <pre class="error-pre">${escapeHtml(data.formattedError || diag.message)}</pre>
-          ${data.kindHint ? `<div class="kind-hint"><strong>💡 Kindful Hint:</strong> ${escapeHtml(data.kindHint)}</div>` : ""}
+          ${data.kindHint ? `<div class="kind-hint"><strong>Explanation:</strong> ${escapeHtml(data.kindHint)}</div>` : ""}
         </div>`;
       $("status-line").textContent = `Error [${diag.code}] at line ${diag.span?.startLine || "?"}`;
       return;
@@ -152,22 +226,21 @@
 
     if (data.hasHoles) {
       badge.className = "badge badge-amber";
-      badge.textContent = `⚠ ${data.holes.length} Open Hole(s)`;
+      badge.textContent = `Open holes: ${data.holes.length}`;
       banner.className = "card banner banner-amber";
-      banner.innerHTML = `<strong>Proof in progress:</strong> Found ${data.holes.length} open <code>?hole(s)</code>. Click any suggested tactic below to copy it into your proof!`;
+      banner.innerHTML = `<strong>Proof incomplete:</strong> Found ${data.holes.length} open <code>?hole</code>(s). Click a suggested tactic below to copy it.`;
     } else if (data.isAxiomFree) {
       badge.className = "badge badge-jade";
-      badge.textContent = "🛡 100% Axiom-Free";
+      badge.textContent = "Verified (0 axioms)";
       banner.className = "card banner banner-jade";
-      banner.innerHTML = `<strong>Verified 100% Axiom-Free!</strong> All ${stats.theorems} theorem(s) and ${stats.functions} function(s) passed the Trusted Kernel in ${data.elapsedMs}ms.`;
+      banner.innerHTML = `<strong>Verified (0 axioms).</strong> ${stats.theorems} theorem(s) and ${stats.functions} function(s) passed the Trusted Kernel in ${data.elapsedMs}ms.`;
     } else {
       badge.className = "badge badge-amber";
-      badge.textContent = "⚠ Uses Axioms";
+      badge.textContent = "Uses axioms";
       banner.className = "card banner banner-amber";
       banner.innerHTML = `<strong>Type-checked with axioms:</strong> <code>${escapeHtml((data.axiomsUsed || []).join(", "))}</code>. Replace <code>sorry</code> before strict extraction.`;
     }
 
-    // Directives (#eval / #axioms / #check)
     if (data.directives && data.directives.length > 0) {
       $("directives-section").classList.remove("hidden");
       $("directives-list").innerHTML = data.directives
@@ -180,7 +253,6 @@
         .join("");
     }
 
-    // Holes
     if (data.holes && data.holes.length > 0) {
       $("holes-section").classList.remove("hidden");
       $("holes-list").innerHTML = data.holes
@@ -208,12 +280,11 @@
       $("holes-list").querySelectorAll("[data-copy-tactic]").forEach((btn) => {
         btn.addEventListener("click", () => {
           navigator.clipboard?.writeText(btn.dataset.copyTactic);
-          $("status-line").textContent = `Copied tactic '${btn.dataset.copyTactic}' to clipboard!`;
+          $("status-line").textContent = `Copied tactic '${btn.dataset.copyTactic}' to clipboard.`;
         });
       });
     }
 
-    // Symbols outline
     state.symbols = data.symbols || [];
     renderSymbols();
     $("status-line").textContent = `Verified '${state.activeFile}' in ${data.elapsedMs}ms.`;
@@ -247,7 +318,7 @@
   async function runExtract() {
     const source = $("code-editor").value;
     const strict = $("extract-strict").checked;
-    $("extract-code").textContent = "// Extracting verified code…";
+    $("extract-code").textContent = "// Extracting verified code...";
     const data = await apiPost("/api/extract", {
       source,
       target: state.extractTarget,
@@ -306,7 +377,7 @@
     ];
     state.activeProverStateId = r.stateId;
     $("prover-feedback").className = "card banner banner-neutral";
-    $("prover-feedback").textContent = "Proof started! Click a suggested tactic pill or type a tactic below.";
+    $("prover-feedback").textContent = "Proof session started. Apply a tactic below or pick a suggestion.";
     $("trace-box").classList.add("hidden");
     renderProverState();
   }
@@ -336,11 +407,11 @@
 
     if (r.isSolved) {
       $("prover-feedback").className = "card banner banner-jade";
-      $("prover-feedback").innerHTML = `<strong>🛡 Q.E.D. — Kernel Verified (100% Axiom-Free)!</strong> Copy the generated script on the right.`;
+      $("prover-feedback").innerHTML = `<strong>Q.E.D. — Kernel Verified (0 axioms).</strong> The reconstructed script is shown on the right.`;
       await fetchProofTrace(r.stateId);
     } else {
       $("prover-feedback").className = "card banner banner-neutral";
-      $("prover-feedback").textContent = `Applied '${tacticText}' → ${r.openGoals.length} open goal(s) remaining.`;
+      $("prover-feedback").textContent = `Applied '${tacticText}': ${r.openGoals.length} open goal(s) remaining.`;
     }
     renderProverState();
   }
@@ -384,7 +455,6 @@
       });
     }
 
-    // Render branching proof exploration tree
     const depthOf = (n) => {
       let d = 0;
       let cur = n;
@@ -399,7 +469,7 @@
       .map((n) => {
         const indent = Math.min(depthOf(n), 8) * 18;
         const cls = ["tree-node", n.stateId === state.activeProverStateId ? "active" : "", n.isSolved ? "solved" : ""].join(" ");
-        const status = n.isSolved ? "🛡 Q.E.D." : `${n.openGoals.length} goal(s)`;
+        const status = n.isSolved ? "Q.E.D." : `${n.openGoals.length} goal(s)`;
         return `<div class="${cls}" data-select-state="${n.stateId}" style="margin-left:${indent}px">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <span class="mono"><strong>#${n.stateId}</strong> ${escapeHtml(n.tactic)}</span>
@@ -413,30 +483,30 @@
       el.addEventListener("click", () => {
         state.activeProverStateId = Number(el.dataset.selectState);
         $("prover-feedback").className = "card banner banner-neutral";
-        $("prover-feedback").textContent = `Switched to state #${state.activeProverStateId} (branching / backtracking ready).`;
+        $("prover-feedback").textContent = `Switched to state #${state.activeProverStateId}.`;
         renderProverState();
       });
     });
   }
 
   // =========================================================================
-  // Lightweight Markdown Renderer for Kindful Docs
+  // Documentation Viewer
   // =========================================================================
 
   function renderMarkdown(md) {
     const codeBlocks = [];
-    const withPlaceholders = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    const withPlaceholders = md.replace(/```(\w*)\r?\n([\s\S]*?)```/g, (_, lang, code) => {
       const idx = codeBlocks.length;
-      codeBlocks.push({ lang, code });
+      codeBlocks.push({ lang, code: code.replace(/\r?\n$/, "") });
       return `\n@@CODEBLOCK_${idx}@@\n`;
     });
 
     const lines = withPlaceholders.split(/\r?\n/);
     let html = "";
-    let inList = false;
+    let listType = null;
     let inTable = false;
 
-    const flushList = () => { if (inList) { html += "</ul>"; inList = false; } };
+    const flushList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
     const flushTable = () => { if (inTable) { html += "</tbody></table>"; inTable = false; } };
 
     const inlineFmt = (text) =>
@@ -445,8 +515,7 @@
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
         .replace(/\*([^*]+)\*/g, "<em>$1</em>");
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of lines) {
       const cbMatch = line.trim().match(/^@@CODEBLOCK_(\d+)@@$/);
       if (cbMatch) {
         flushList();
@@ -454,14 +523,14 @@
         const block = codeBlocks[Number(cbMatch[1])];
         const canTry = block.lang === "scala" || block.lang === "samurai" || block.lang === "";
         const highlighted = canTry ? highlightSamurai(block.code) : escapeHtml(block.code);
-        html += `<pre>${canTry ? `<button class="try-btn" data-try-code="${encodeURIComponent(block.code)}">Load in Editor ▶</button>` : ""}<code>${highlighted}</code></pre>`;
+        html += `<pre>${canTry ? `<button class="try-btn" data-try-code="${encodeURIComponent(block.code)}">${escapeHtml(tr().loadInEditor)}</button>` : ""}<code>${highlighted}</code></pre>`;
         continue;
       }
 
       if (line.startsWith("|") && line.endsWith("|")) {
         flushList();
         const cells = line.slice(1, -1).split("|").map((c) => c.trim());
-        if (cells.every((c) => /^[-:]+$/.test(c))) continue;
+        if (cells.every((c) => /^[-:\s]+$/.test(c))) continue;
         if (!inTable) {
           inTable = true;
           html += `<table><thead><tr>${cells.map((c) => `<th>${inlineFmt(c)}</th>`).join("")}</tr></thead><tbody>`;
@@ -476,9 +545,12 @@
       if (line.startsWith("### ")) { flushList(); html += `<h3>${inlineFmt(line.slice(4))}</h3>`; }
       else if (line.startsWith("## ")) { flushList(); html += `<h2>${inlineFmt(line.slice(3))}</h2>`; }
       else if (line.startsWith("# ")) { flushList(); html += `<h1>${inlineFmt(line.slice(2))}</h1>`; }
-      else if (/^[-*]\s+/.test(line)) {
-        if (!inList) { html += "<ul>"; inList = true; }
-        html += `<li>${inlineFmt(line.replace(/^[-*]\s+/, ""))}</li>`;
+      else if (/^\s*[-*]\s+/.test(line)) {
+        if (listType !== "ul") { flushList(); html += "<ul>"; listType = "ul"; }
+        html += `<li>${inlineFmt(line.replace(/^\s*[-*]\s+/, ""))}</li>`;
+      } else if (/^\s*\d+\.\s+/.test(line)) {
+        if (listType !== "ol") { flushList(); html += "<ol>"; listType = "ol"; }
+        html += `<li>${inlineFmt(line.replace(/^\s*\d+\.\s+/, ""))}</li>`;
       } else if (line.trim() === "") {
         flushList();
       } else {
@@ -494,6 +566,7 @@
   function showDoc(docId) {
     const doc = state.docs.find((d) => d.id === docId) || state.docs[0];
     if (!doc) return;
+    state.activeDocId = doc.id;
     document.querySelectorAll(".doc-nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.docId === doc.id));
     $("docs-title").textContent = doc.title;
     $("docs-body").innerHTML = renderMarkdown(doc.markdown);
@@ -513,28 +586,47 @@
     });
   }
 
+  async function loadDocs() {
+    const docsRes = await fetch(`/api/docs?lang=${state.lang}`).then((r) => r.json());
+    state.docs = docsRes.docs || [];
+    $("docs-nav").innerHTML = state.docs
+      .map((d) => `<button class="doc-nav-btn" data-doc-id="${d.id}">${escapeHtml(d.title)}</button>`)
+      .join("");
+    $("docs-nav").querySelectorAll(".doc-nav-btn").forEach((btn) => {
+      btn.addEventListener("click", () => showDoc(btn.dataset.docId));
+    });
+    if (state.docs.length > 0) showDoc(state.activeDocId || state.docs[0].id);
+  }
+
   // =========================================================================
-  // Initialization & Event Wiring
+  // Initialization
   // =========================================================================
 
   async function init() {
-    // Mode tabs
     document.querySelectorAll(".mode-tab").forEach((btn) => {
       btn.addEventListener("click", () => switchMode(btn.dataset.mode));
     });
-    // Sub tabs
     document.querySelectorAll(".sub-tab").forEach((btn) => {
       btn.addEventListener("click", () => {
         switchSubPanel(btn.dataset.panel);
         if (btn.dataset.panel === "extract") runExtract();
       });
     });
-    // Theme toggle
+
     $("btn-theme").addEventListener("click", () => {
       const root = document.documentElement;
       root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark";
+      applyI18n();
     });
-    // Editor events
+
+    document.querySelectorAll(".lang-btn").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        state.lang = btn.dataset.lang === "ja" ? "ja" : "en";
+        applyI18n();
+        await loadDocs();
+      });
+    });
+
     const editor = $("code-editor");
     editor.addEventListener("input", syncEditorVisuals);
     editor.addEventListener("scroll", syncScroll);
@@ -554,7 +646,6 @@
       }
     });
 
-    // Snippet chips
     document.querySelectorAll("[data-snippet]").forEach((chip) => {
       chip.addEventListener("click", () => {
         const text = SNIPPETS[chip.dataset.snippet] || "";
@@ -569,7 +660,6 @@
     $("btn-verify").addEventListener("click", runVerify);
     $("symbol-filter").addEventListener("input", renderSymbols);
 
-    // Extraction controls
     document.querySelectorAll(".target-btn").forEach((btn) => {
       btn.addEventListener("click", () => {
         document.querySelectorAll(".target-btn").forEach((b) => b.classList.remove("active"));
@@ -581,7 +671,7 @@
     $("btn-run-extract").addEventListener("click", runExtract);
     $("btn-copy-extract").addEventListener("click", () => {
       navigator.clipboard?.writeText(state.lastExtractedCode);
-      $("status-line").textContent = "Copied extracted code to clipboard!";
+      $("status-line").textContent = "Copied extracted code to clipboard.";
     });
     $("btn-download-extract").addEventListener("click", () => {
       if (!state.lastExtractedCode) return;
@@ -593,7 +683,6 @@
       a.click();
     });
 
-    // Interactive Prover controls
     $("prover-preset").addEventListener("change", (e) => {
       $("prover-statement").value = e.target.value;
     });
@@ -613,7 +702,8 @@
       navigator.clipboard?.writeText($("trace-code").textContent);
     });
 
-    // Load examples
+    applyI18n();
+
     const exRes = await fetch("/api/examples").then((r) => r.json());
     state.examples = exRes.examples || [];
     const sel = $("example-select");
@@ -640,16 +730,7 @@
       runVerify();
     }
 
-    // Load kindful docs
-    const docsRes = await fetch("/api/docs").then((r) => r.json());
-    state.docs = docsRes.docs || [];
-    $("docs-nav").innerHTML = state.docs
-      .map((d) => `<button class="doc-nav-btn" data-doc-id="${d.id}">${escapeHtml(d.title)}</button>`)
-      .join("");
-    $("docs-nav").querySelectorAll(".doc-nav-btn").forEach((btn) => {
-      btn.addEventListener("click", () => showDoc(btn.dataset.docId));
-    });
-    if (state.docs.length > 0) showDoc(state.docs[0].id);
+    await loadDocs();
   }
 
   init();

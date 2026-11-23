@@ -42,10 +42,25 @@ class StudioServerSuite extends FunSuite {
       assertEquals(exJson.field("ok"), Some(Json.Bool(true)))
       assert(exJson.field("examples").flatMap(_.asArr).exists(_.length >= 8))
 
-      // 3. Kindful docs endpoint
-      val docsJson = Json.parse(httpGet(s"${server.url}/api/docs").body()).toOption.get
-      assertEquals(docsJson.field("ok"), Some(Json.Bool(true)))
-      assert(docsJson.field("docs").flatMap(_.asArr).exists(_.length >= 6))
+      // 3. Documentation endpoint (English and Japanese)
+      val docsEnJson = Json.parse(httpGet(s"${server.url}/api/docs").body()).toOption.get
+      assertEquals(docsEnJson.field("ok"), Some(Json.Bool(true)))
+      assertEquals(docsEnJson.field("lang"), Some(Json.Str("en")))
+      assert(docsEnJson.field("docs").flatMap(_.asArr).exists(_.length == 8))
+
+      val docsJaJson = Json.parse(httpGet(s"${server.url}/api/docs?lang=ja").body()).toOption.get
+      assertEquals(docsJaJson.field("ok"), Some(Json.Bool(true)))
+      assertEquals(docsJaJson.field("lang"), Some(Json.Str("ja")))
+      assert(docsJaJson.field("docs").flatMap(_.asArr).exists(_.length == 8))
+      assert(
+        docsJaJson
+          .field("docs")
+          .flatMap(_.asArr)
+          .flatMap(_.headOption)
+          .flatMap(_.field("title"))
+          .flatMap(_.asString)
+          .exists(_.contains("はじめに"))
+      )
 
       // 4. Live /api/check with valid axiom-free code
       val checkOk = Json

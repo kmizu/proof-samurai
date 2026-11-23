@@ -1,176 +1,85 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Proof Samurai — Kindful Docs &amp; Scala 3 Brace Theorem Prover</title>
-  <meta name="description" content="Sound dependently-typed proof assistant in Scala 3 brace syntax with verified code extraction to Scala 3, TypeScript, and JavaScript — built for humans and AI." />
+  <title>Proof Samurai — Documentation</title>
+  <meta name="description" content="Proof Samurai documentation: dependently-typed proof assistant in Scala 3 brace syntax with a small trusted kernel and verified code extraction to Scala 3, TypeScript, and JavaScript." />
   <link rel="stylesheet" href="assets/site.css" />
 </head>
 <body>
   <header class="site-header">
     <div class="header-inner">
-      <a class="brand" href="#home" id="brand-link">
-        <span class="crest" aria-hidden="true">⚔</span>
-        <div>
-          <div class="brand-name">Proof Samurai</div>
-          <div class="brand-tag">Scala 3 Brace Theorem Prover · Humans &amp; AI</div>
-        </div>
-      </a>
+      <div class="header-left">
+        <button id="mobile-menu-btn" class="icon-btn mobile-only" aria-label="Toggle navigation" aria-expanded="false">Menu</button>
+        <a class="brand" href="#en/home" id="brand-link">
+          <span class="brand-name">Proof Samurai</span>
+          <span class="brand-version">v0.1.0</span>
+        </a>
+      </div>
 
       <div class="header-search">
-        <input id="doc-search" type="search" placeholder="Search docs, tactics (arith, calc, cases), or error codes (K020)…" aria-label="Search documentation" />
+        <input id="doc-search" type="search" placeholder="Search documentation, tactics, error codes..." aria-label="Search documentation" />
       </div>
 
       <div class="header-actions">
-        <a class="btn btn-ghost" href="https://github.com/kmizu/proof-samurai" target="_blank" rel="noopener">GitHub ↗</a>
-        <button id="theme-toggle" class="btn btn-ghost" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button class="lang-btn active" data-lang="en" aria-pressed="true">English</button>
+          <button class="lang-btn" data-lang="ja" aria-pressed="false">日本語</button>
+        </div>
+        <button id="theme-toggle" class="header-btn" aria-label="Toggle color theme">Dark</button>
+        <a class="header-btn" href="https://github.com/kmizu/proof-samurai" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </header>
 
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="sidebar-group">
-        <div class="sidebar-heading">Start Here</div>
-        <button class="nav-item active" data-page="home">🏠 Welcome &amp; Quickstart</button>
-        <button class="nav-item" data-page="GETTING_STARTED.md">🌱 10-Minute Tutorial</button>
-        <button class="nav-item" data-page="LANGUAGE.md">📘 Scala 3 Brace Syntax</button>
-      </div>
-      <div class="sidebar-group">
-        <div class="sidebar-heading">Proving &amp; Extraction</div>
-        <button class="nav-item" data-page="TACTICS_COOKBOOK.md">🧭 Friendly Tactic Cookbook</button>
-        <button class="nav-item" data-page="EXTRACTION.md">⚡ Verified Code Extraction</button>
-        <button class="nav-item" data-page="TROUBLESHOOTING.md">💡 Kindful Error Guide</button>
-      </div>
-      <div class="sidebar-group">
-        <div class="sidebar-heading">Architecture &amp; AI</div>
-        <button class="nav-item" data-page="KERNEL.md">🛡 Trusted Kernel Soundness</button>
-        <button class="nav-item" data-page="AI_AGENT_GUIDE.md">🤖 AI Agent Playbook</button>
-        <button class="nav-item" data-page="AI_PROTOCOL.md">🔌 JSON-RPC Protocol Ref</button>
-      </div>
-      <div class="sidebar-group">
-        <div class="sidebar-heading">Interactive Tools</div>
-        <button class="nav-item" data-page="finder">🔎 Tactic &amp; Error Finder</button>
-      </div>
-      <div class="studio-promo">
-        <div class="studio-promo-title">Try Proof Samurai Studio</div>
-        <p>Launch the interactive local Web IDE with live kernel infoview &amp; proof tree:</p>
-        <code>sbt "run studio"</code>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Documentation navigation">
+      <nav id="sidebar-nav"></nav>
+      <div class="sidebar-meta">
+        <div class="sidebar-meta-label" data-i18n="sidebarStudioLabel">Local Web IDE</div>
+        <code class="sidebar-cmd">sbt "run studio"</code>
       </div>
     </aside>
 
-    <main class="content">
-      <!-- HOME LANDING VIEW -->
-      <section id="page-home" class="page active">
-        <div class="hero">
-          <div class="hero-pill">🛡 100% Axiom-Free Trusted Kernel · Zero Indentation Syntax</div>
-          <h1>Write Scala 3.<br />Prove It Sound.<br />Extract Production Code.</h1>
-          <p class="hero-lead">
-            <strong>Proof Samurai</strong> is a pragmatic, readable, AI-friendly dependently-typed proof assistant.
-            Write ordinary Scala 3 brace syntax, prove correctness with friendly tactics (<code>calc</code>, <code>arith</code>, <code>simp</code>, <code>auto</code>),
-            and extract zero-overhead <strong>Scala 3</strong>, <strong>TypeScript</strong>, or <strong>JavaScript</strong>.
-          </p>
-          <div class="hero-cta">
-            <button class="btn btn-primary" data-goto="GETTING_STARTED.md">Start the 10-Minute Tour →</button>
-            <button class="btn btn-secondary" data-goto="TACTICS_COOKBOOK.md">Browse Tactic Cookbook</button>
-            <button class="btn btn-ghost" data-goto="AI_AGENT_GUIDE.md">AI Agent Guide</button>
+    <div class="main-wrap">
+      <main class="content">
+        <!-- OVERVIEW PAGE -->
+        <section id="page-home" class="page active">
+          <div id="home-container"></div>
+        </section>
+
+        <!-- MARKDOWN ARTICLE PAGE -->
+        <article id="page-markdown" class="page">
+          <div class="article-layout">
+            <div class="article-main">
+              <div id="article-breadcrumb" class="breadcrumb"></div>
+              <div id="markdown-container" class="markdown-body"></div>
+              <nav id="chapter-nav" class="chapter-nav" aria-label="Chapter navigation"></nav>
+            </div>
+            <aside id="article-toc" class="toc" aria-label="On this page"></aside>
           </div>
-          <div class="cmd-strip">
-            <span class="cmd-label">Launch Web IDE:</span>
-            <code id="studio-cmd">sbt "run studio"</code>
-            <button class="copy-inline" data-copy='sbt "run studio"'>Copy</button>
+        </article>
+
+        <!-- TACTIC & ERROR INDEX PAGE -->
+        <section id="page-index" class="page">
+          <div id="index-header"></div>
+          <div class="index-controls">
+            <input id="index-filter" class="filter-input" type="search" placeholder="Filter by tactic, goal shape, or error code (e.g. arith, cases, K020)..." />
+            <div class="filter-tabs" id="index-kind-tabs"></div>
           </div>
-        </div>
+          <div id="index-table-wrap"></div>
+        </section>
 
-        <div class="feature-grid">
-          <div class="feature-card">
-            <div class="feature-icon">📘</div>
-            <h3>Familiar Scala 3 Braces</h3>
-            <p><code>enum</code>, <code>case class</code>, <code>def</code>, <code>theorem</code>, <code>[1, 2, 3]</code> list literals, <code>match { ... }</code>, and <code>calc { ... }</code>. No indentation-sensitive surprises.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">🛡</div>
-            <h3>Small Trusted Kernel</h3>
-            <p>De Bruijn core enforcing universe stratification, strict positivity, structural termination, exhaustiveness, and subsingleton <code>Prop</code> elimination.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">⚡</div>
-            <h3>Zero-Overhead Extraction</h3>
-            <p>All <code>Prop</code> types, theorems, and <code>Subset</code> proof fields vanish soundly into clean Scala 3, TypeScript, or JavaScript with a trust manifest.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon">🤖</div>
-            <h3>AI-Native Proof Server</h3>
-            <p>Folded low-token goals, zero-cost immutable branching/backtracking, <code>proveGoal</code> refinement, <code>batchStep</code>, <code>inspectHoles</code>, and <code>getProofTrace</code>.</p>
-          </div>
-        </div>
+        <!-- SEARCH RESULTS PAGE -->
+        <section id="page-search" class="page">
+          <h1 id="search-heading">Search Results</h1>
+          <div id="search-results"></div>
+        </section>
 
-        <div class="showcase-split">
-          <div class="showcase-col">
-            <h3>1. Write &amp; Prove in Scala 3 Brace Syntax</h3>
-            <pre><code class="lang-samurai">import Prelude.*
-import Nat.*
-import List.*
-
-theorem expandBinomial(left: Nat, right: Nat, factor: Nat):
-  (left + right) * (factor + 1) ===
-    (left * factor + right * factor) + (right + left) = by {
-  arith
-}
-
-theorem calcLength[Element](a: List[Element], b: List[Element], c: List[Element]):
-  length((a ++ b) ++ c) === length(c) + (length(a) + length(b)) = {
-  calc {
-    length((a ++ b) ++ c)
-    === (length(a) + length(b)) + length(c) by { simp }
-    === length(c) + (length(a) + length(b)) by { arith }
-  }
-}</code></pre>
-          </div>
-          <div class="showcase-col">
-            <h3>2. Extract Clean, Verified Code (0 Proof Overhead)</h3>
-            <pre><code class="lang-samurai">// Generated by Proof Samurai (46 theorems verified, 0 axioms)
-object VerifiedSorting {
-  enum Subset[Domain] {
-    case Mk(value: Domain) // Prop proof completely erased!
-  }
-
-  def insertionSort(items: List[Nat]): List[Nat] = {
-    (items) match {
-      case List.Nil() => List.Nil[Nat]()
-      case List.Cons(head, tail) => insert(head, insertionSort(tail))
-    }
-  }
-
-  def sortVerified(items: List[Nat]): Subset[List[Nat]] = {
-    Subset.Mk[List[Nat]](insertionSort(items))
-  }
-}</code></pre>
-          </div>
-        </div>
-      </section>
-
-      <!-- MARKDOWN GUIDE VIEW -->
-      <article id="page-markdown" class="page markdown-body">
-        <div id="markdown-container"></div>
-        <div id="chapter-nav" class="chapter-nav"></div>
-      </article>
-
-      <!-- INTERACTIVE TACTIC & ERROR FINDER VIEW -->
-      <section id="page-finder" class="page">
-        <h1>🔎 Interactive Tactic &amp; Error Finder</h1>
-        <p class="muted-lead">Type a goal shape (like <code>===</code>, <code>\/</code>, <code>if</code>, <code>Nat</code>) or a kernel error code (like <code>K020</code>, <code>K006</code>, <code>K025</code>, <code>T010</code>) to get instant kindful guidance.</p>
-        <input id="finder-input" class="finder-input" type="search" placeholder="Filter tactics and errors (e.g. arith, cases, K020, termination, Prop)…" />
-        <div id="finder-results" class="finder-grid"></div>
-      </section>
-
-      <!-- SEARCH RESULTS VIEW -->
-      <section id="page-search" class="page">
-        <h1>Search Results</h1>
-        <div id="search-results" class="finder-grid"></div>
-      </section>
-    </main>
+        <footer class="site-footer" id="site-footer"></footer>
+      </main>
+    </div>
   </div>
 
   <script src="assets/site.js"></script>

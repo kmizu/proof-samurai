@@ -1,34 +1,35 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Proof Samurai Studio — Interactive Theorem Prover IDE</title>
+  <title>Proof Samurai Studio</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="brand">
-      <div class="crest" aria-hidden="true">⚔</div>
-      <div>
-        <div class="brand-title">Proof Samurai Studio</div>
-        <div class="brand-sub">Sound Scala 3 Brace Proof Assistant · Humans &amp; AI</div>
-      </div>
+      <span class="brand-title">Proof Samurai Studio</span>
+      <span class="brand-version">v0.1.0</span>
     </div>
 
     <nav class="mode-tabs" role="tablist" aria-label="Workspace modes">
-      <button class="mode-tab active" data-mode="editor" role="tab" aria-selected="true">Editor &amp; Infoview</button>
-      <button class="mode-tab" data-mode="prover" role="tab" aria-selected="false">Interactive Proof Tree</button>
-      <button class="mode-tab" data-mode="docs" role="tab" aria-selected="false">Learn &amp; Docs</button>
+      <button class="mode-tab active" data-mode="editor" role="tab" aria-selected="true" data-i18n="tabEditor">Editor &amp; Infoview</button>
+      <button class="mode-tab" data-mode="prover" role="tab" aria-selected="false" data-i18n="tabProver">Proof Tree</button>
+      <button class="mode-tab" data-mode="docs" role="tab" aria-selected="false" data-i18n="tabDocs">Documentation</button>
     </nav>
 
     <div class="topbar-actions">
       <select id="example-select" class="select-control" aria-label="Load example or stdlib module">
-        <option value="">Loading examples…</option>
+        <option value="">Loading examples...</option>
       </select>
-      <button id="btn-verify" class="btn btn-primary" title="Verify file (Ctrl+Enter)">▶ Verify</button>
-      <span id="trust-badge" class="badge badge-neutral" title="Kernel trust status">Ready</span>
-      <button id="btn-theme" class="btn btn-ghost" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+      <button id="btn-verify" class="btn btn-primary" title="Verify file (Ctrl+Enter)" data-i18n="btnVerify">Verify</button>
+      <span id="trust-badge" class="badge badge-neutral" title="Kernel verification status">Ready</span>
+      <div class="lang-switch" role="group" aria-label="Language">
+        <button class="lang-btn active" data-lang="en">EN</button>
+        <button class="lang-btn" data-lang="ja">日本語</button>
+      </div>
+      <button id="btn-theme" class="btn btn-ghost" title="Toggle light/dark theme">Dark</button>
     </div>
   </header>
 
@@ -41,7 +42,7 @@
           <span id="cursor-pos" class="muted">Ln 1, Col 1</span>
         </div>
         <div class="snippet-bar">
-          <span class="muted">Insert:</span>
+          <span class="muted" data-i18n="insertLabel">Insert:</span>
           <button class="chip" data-snippet="theorem">theorem</button>
           <button class="chip" data-snippet="calc">calc</button>
           <button class="chip" data-snippet="induction">induction</button>
@@ -65,7 +66,7 @@
         </div>
       </div>
       <div class="editor-footer">
-        <span id="status-line">Press <strong>Ctrl+Enter</strong> to verify with the Trusted Kernel.</span>
+        <span id="status-line">Press Ctrl+Enter to verify with the Trusted Kernel.</span>
         <span id="stats-line" class="muted"></span>
       </div>
     </section>
@@ -73,16 +74,16 @@
     <section class="pane infoview-pane">
       <div class="pane-header">
         <div class="sub-tabs" role="tablist">
-          <button class="sub-tab active" data-panel="infoview">Infoview</button>
-          <button class="sub-tab" data-panel="extract">Code Extraction</button>
-          <button class="sub-tab" data-panel="symbols">Symbols</button>
+          <button class="sub-tab active" data-panel="infoview" data-i18n="subInfoview">Infoview</button>
+          <button class="sub-tab" data-panel="extract" data-i18n="subExtract">Code Extraction</button>
+          <button class="sub-tab" data-panel="symbols" data-i18n="subSymbols">Symbols</button>
         </div>
       </div>
 
       <!-- Infoview Panel -->
       <div id="panel-infoview" class="panel-body active">
         <div id="verify-banner" class="card banner banner-neutral">
-          Click <strong>▶ Verify</strong> or press <code>Ctrl+Enter</code> to check proofs and evaluate <code>#eval</code> expressions.
+          Click <strong>Verify</strong> or press <code>Ctrl+Enter</code> to check proofs and evaluate <code>#eval</code> expressions.
         </div>
         <div id="directives-section" class="section hidden">
           <h3>Outputs (#eval / #axioms / #check)</h3>
@@ -108,12 +109,12 @@
           </div>
           <label class="checkbox-label">
             <input type="checkbox" id="extract-strict" checked />
-            Strict (0 axioms)
+            <span data-i18n="strictLabel">Strict (0 axioms)</span>
           </label>
           <div class="btn-group">
-            <button id="btn-run-extract" class="btn btn-primary btn-sm">⚡ Extract</button>
-            <button id="btn-copy-extract" class="btn btn-ghost btn-sm">Copy</button>
-            <button id="btn-download-extract" class="btn btn-ghost btn-sm">Download</button>
+            <button id="btn-run-extract" class="btn btn-primary btn-sm" data-i18n="btnExtract">Extract</button>
+            <button id="btn-copy-extract" class="btn btn-ghost btn-sm" data-i18n="btnCopy">Copy</button>
+            <button id="btn-download-extract" class="btn btn-ghost btn-sm" data-i18n="btnDownload">Download</button>
           </div>
         </div>
         <div id="extract-manifest" class="manifest-grid"></div>
@@ -122,41 +123,41 @@
 
       <!-- Symbols Panel -->
       <div id="panel-symbols" class="panel-body">
-        <input id="symbol-filter" class="text-input" type="search" placeholder="Filter enums, functions, theorems, @simp lemmas…" />
+        <input id="symbol-filter" class="text-input full-width" type="search" placeholder="Filter enums, functions, theorems, @simp lemmas..." />
         <div id="symbols-list" class="stack" style="margin-top: 12px;"></div>
       </div>
     </section>
   </main>
 
-  <!-- MODE 2: INTERACTIVE PROOF TREE & TACTIC PLAYGROUND -->
+  <!-- MODE 2: INTERACTIVE PROOF TREE -->
   <main id="view-prover" class="workspace">
     <section class="pane prover-left">
       <div class="pane-header">
-        <div class="pane-title">Interactive Proof Session (Branch &amp; Backtrack)</div>
+        <div class="pane-title" data-i18n="proverSessionTitle">Interactive Proof Session</div>
       </div>
       <div class="panel-body active">
         <div class="field-group">
-          <label for="prover-preset">Preset Theorem</label>
+          <label for="prover-preset" data-i18n="presetLabel">Preset Theorem</label>
           <select id="prover-preset" class="select-control full-width">
             <option value="forall (a: Nat, b: Nat) => a + b === b + a">Addition Commutativity: a + b === b + a</option>
             <option value="forall (a: Nat, b: Nat, c: Nat) => (a + b) * (c + 1) === (a * c + b * c) + (b + a)">Binomial Expansion: (a + b) * (c + 1) === ...</option>
             <option value="forall (first: Prop, second: Prop) => (first /\ second) => (second /\ first)">Conjunction Commutativity: (P /\ Q) =&gt; (Q /\ P)</option>
-            <option value="forall (first: Prop, second: Prop) => second => (first \/ second)">Disjunction Right (Try Branching &amp; Backtracking!)</option>
+            <option value="forall (first: Prop, second: Prop) => second => (first \/ second)">Disjunction Right (Branching / Backtracking)</option>
             <option value="forall (xs: List[Nat]) => append(xs, []) === xs">List Right Identity: xs ++ [] === xs</option>
           </select>
         </div>
         <div class="field-group">
-          <label for="prover-statement">Theorem Statement</label>
-          <input id="prover-statement" class="text-input mono" type="text" value="forall (a: Nat, b: Nat) => a + b === b + a" />
+          <label for="prover-statement" data-i18n="statementLabel">Theorem Statement</label>
+          <input id="prover-statement" class="text-input mono full-width" type="text" value="forall (a: Nat, b: Nat) => a + b === b + a" />
         </div>
         <div class="btn-row">
-          <button id="btn-start-proof" class="btn btn-primary">⚔ Start Proof</button>
-          <button id="btn-auto-solve" class="btn btn-ghost">✨ Auto Solve</button>
-          <button id="btn-copy-trace" class="btn btn-ghost">📋 Copy by { ... } Script</button>
+          <button id="btn-start-proof" class="btn btn-primary" data-i18n="btnStartProof">Start Proof</button>
+          <button id="btn-auto-solve" class="btn btn-ghost" data-i18n="btnAutoSolve">Auto Solve</button>
+          <button id="btn-copy-trace" class="btn btn-ghost" data-i18n="btnCopyTrace">Copy by { ... } Script</button>
         </div>
 
         <div id="prover-feedback" class="card banner banner-neutral" style="margin-top: 14px;">
-          Start a proof to step through tactics interactively. Click any node in the Proof Tree to backtrack!
+          Start a proof to apply tactics step by step. Select any node in the proof tree to branch or backtrack.
         </div>
 
         <div id="prover-goal-box" class="section hidden">
@@ -168,9 +169,9 @@
           <h3>Apply Tactic</h3>
           <div class="tactic-input-row">
             <input id="prover-tactic-input" class="text-input mono" type="text" placeholder="e.g. intros(a, b) or induction(a) or simp or arith" />
-            <button id="btn-apply-tactic" class="btn btn-primary">Step →</button>
+            <button id="btn-apply-tactic" class="btn btn-primary" data-i18n="btnStep">Step</button>
           </div>
-          <div class="muted" style="margin: 10px 0 6px;">AI-Ranked Suggestions (1-click apply):</div>
+          <div class="muted" style="margin: 10px 0 6px;">Suggested tactics:</div>
           <div id="prover-suggestions" class="suggestion-pills"></div>
         </div>
       </div>
@@ -178,24 +179,24 @@
 
     <section class="pane prover-right">
       <div class="pane-header">
-        <div class="pane-title">Proof Exploration Tree</div>
-        <span class="muted">Click any state node to branch or backtrack</span>
+        <div class="pane-title" data-i18n="proverTreeTitle">Proof Exploration Tree</div>
+        <span class="muted" data-i18n="proverTreeHint">Click a node to branch or backtrack</span>
       </div>
       <div class="panel-body active">
         <div id="proof-tree" class="proof-tree"></div>
         <div id="trace-box" class="section hidden">
-          <h3>Generated Proof Samurai Script</h3>
+          <h3>Generated Proof Script</h3>
           <pre class="code-output"><code id="trace-code"></code></pre>
         </div>
       </div>
     </section>
   </main>
 
-  <!-- MODE 3: KINDFUL LEARN & DOCS HUB -->
+  <!-- MODE 3: DOCUMENTATION -->
   <main id="view-docs" class="workspace">
     <aside class="pane docs-sidebar">
       <div class="pane-header">
-        <div class="pane-title">Kindful Guides</div>
+        <div class="pane-title" data-i18n="docsListTitle">Documentation</div>
       </div>
       <div id="docs-nav" class="docs-nav"></div>
     </aside>

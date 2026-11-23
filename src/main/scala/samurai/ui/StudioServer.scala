@@ -289,19 +289,36 @@ object StudioServer {
       }
     )
 
-    // GET /api/docs — serve kindful markdown docs from docs/ directory
+    // GET /api/docs?lang=en|ja — serve markdown docs from docs/ or docs/ja/
     server.createContext(
       "/api/docs",
       exchange => {
-        val docFiles = List(
-          ("getting-started", "Getting Started (10-Min Tour)", "docs/GETTING_STARTED.md"),
-          ("language", "Scala 3 Brace Language Guide", "docs/LANGUAGE.md"),
-          ("tactics", "Friendly Tactic Cookbook", "docs/TACTICS_COOKBOOK.md"),
-          ("extraction", "Verified Code Extraction", "docs/EXTRACTION.md"),
-          ("troubleshooting", "Kindful Error & Soundness Guide", "docs/TROUBLESHOOTING.md"),
-          ("kernel", "Trusted Kernel Architecture", "docs/KERNEL.md"),
-          ("ai-guide", "AI Agent & Proof Server Guide", "docs/AI_AGENT_GUIDE.md")
-        )
+        val query = Option(exchange.getRequestURI.getQuery).getOrElse("")
+        val isJapanese = query.split("&").exists(param => param == "lang=ja")
+        val docFiles =
+          if (isJapanese) {
+            List(
+              ("getting-started", "01 はじめに", "docs/ja/GETTING_STARTED.md"),
+              ("language", "02 言語リファレンス", "docs/ja/LANGUAGE.md"),
+              ("tactics", "03 タクティク・クックブック", "docs/ja/TACTICS_COOKBOOK.md"),
+              ("extraction", "04 検証済みコード抽出", "docs/ja/EXTRACTION.md"),
+              ("troubleshooting", "05 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
+              ("kernel", "06 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
+              ("ai-guide", "07 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "08 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
+            )
+          } else {
+            List(
+              ("getting-started", "01 Getting Started", "docs/GETTING_STARTED.md"),
+              ("language", "02 Language Reference", "docs/LANGUAGE.md"),
+              ("tactics", "03 Tactic Cookbook", "docs/TACTICS_COOKBOOK.md"),
+              ("extraction", "04 Verified Code Extraction", "docs/EXTRACTION.md"),
+              ("troubleshooting", "05 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
+              ("kernel", "06 Trusted Kernel Architecture", "docs/KERNEL.md"),
+              ("ai-guide", "07 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "08 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
+            )
+          }
         val loaded = docFiles.flatMap { case (id, title, relPath) =>
           val p = Paths.get(relPath)
           if (Files.exists(p)) {
@@ -315,7 +332,15 @@ object StudioServer {
             )
           } else None
         }
-        sendJson(exchange, 200, Json.obj("ok" -> Json.Bool(true), "docs" -> Json.Arr(loaded)))
+        sendJson(
+          exchange,
+          200,
+          Json.obj(
+            "ok" -> Json.Bool(true),
+            "lang" -> Json.Str(if (isJapanese) "ja" else "en"),
+            "docs" -> Json.Arr(loaded)
+          )
+        )
       }
     )
 
