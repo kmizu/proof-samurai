@@ -59,7 +59,8 @@ final case class ElabEnv(
   loadedModules: Set[String] = Set.empty,
   searchPaths: List[Path] = Nil,
   holes: List[HoleInfo] = Nil,
-  directives: List[DirectiveResult] = Nil
+  directives: List[DirectiveResult] = Nil,
+  holeCollectionMode: Boolean = false
 ) {
   def withSearchPaths(paths: List[Path]): ElabEnv = copy(searchPaths = paths)
 
@@ -870,8 +871,15 @@ object Elaborator {
     expr match {
       case SurfaceExpr.HoleExpr(nameOpt, span) =>
         val holeInfo = HoleInfo(nameOpt, span, localCtx, zonkedExpected)
-        val meta = metaCtx.freshMeta(localCtx.depth, zonkedExpected, nameOpt)
-        Right((meta, env.copy(holes = env.holes :+ holeInfo)))
+        if (env.holeCollectionMode) {
+          val (envWithSorry, _) = env.ensureSorryAxiom
+          val isProp = TypeChecker.inferSort(envWithSorry.kernelEnv, localCtx, zonkedExpected).contains(Sort.Prop)
+          val sorryConst = if (isProp) "$sorryProp" else "$sorry"
+          Right((Term.App(Term.Const(sorryConst), zonkedExpected), envWithSorry.copy(holes = envWithSorry.holes :+ holeInfo)))
+        } else {
+          val meta = metaCtx.freshMeta(localCtx.depth, zonkedExpected, nameOpt)
+          Right((meta, env.copy(holes = env.holes :+ holeInfo)))
+        }
 
       case SurfaceExpr.SorryExpr(_) =>
         val (envWithSorry, _) = env.ensureSorryAxiom
@@ -1047,6 +1055,21 @@ object Elaborator {
         val ctor = if (value) "True" else "False"
         Right((Term.Ctor("Bool", ctor), Term.Ind("Bool"), env))
       }
+
+    case SurfaceExpr.ListLitExpr(elements, span) =>
+      if (!env.kernelEnv.inductives.contains("List")) {
+        Left(Diagnostic(Diagnostic.Severity.Error, "E056", "List literal '[...]' requires 'List' to be in scope (try 'import List.*')", span))
+      } else {
+        val desugared = elements.foldRight[SurfaceExpr](
+          SurfaceExpr.SelectExpr(SurfaceExpr.VarExpr("List", span), "Nil", span)
+        ) { (elem, tail) =>
+          SurfaceExpr.BinaryOpExpr("::", elem, tail, elem.span.merge(tail.span))
+        }
+        inferExpr(env, metaCtx, localCtx, desugared)
+      }
+
+    case SurfaceExpr.CalcExpr(start, steps, span) =>
+      elaborateCalc(env, metaCtx, localCtx, start, steps, span)
 
     case SurfaceExpr.HoleExpr(nameOpt, span) =>
       val tyMeta = metaCtx.freshMeta(localCtx.depth, Term.USort(Sort.Type(0)), Some("holeType"))
@@ -2038,8 +2061,12 @@ object Elaborator {
       Pattern.Ctor(Some("Nat"), "Succ", List(normalizePattern("Nat", Pattern.NatLit(n - 1, s))), s)
     case Pattern.BoolLit(true, s)  => Pattern.Ctor(Some("Bool"), "True", Nil, s)
     case Pattern.BoolLit(false, s) => Pattern.Ctor(Some("Bool"), "False", Nil, s)
-    case Pattern.Cons(h, t, s)     => Pattern.Ctor(Some("List"), "Cons", List(h, t), s)
-    case other                     => other
+    case Pattern.Cons(h, t, s) => Pattern.Ctor(Some("List"), "Cons", List(h, t), s)
+    case Pattern.ListLit(elems, s) =>
+      elems.foldRight[Pattern](Pattern.Ctor(Some("List"), "Nil", Nil, s)) { (headPat, tailPat) =>
+        Pattern.Ctor(Some("List"), "Cons", List(headPat, tailPat), headPat.span.merge(tailPat.span))
+      }
+    case other => other
   }
 
   // ===========================================================================
@@ -2091,6 +2118,72 @@ object Elaborator {
     case SurfaceExpr.MatchExpr(s, m, cs, _) =>
       mentionsIdent(s, targetName) || m.exists(mentionsIdent(_, targetName)) || cs.exists(c => mentionsIdent(c.body, targetName))
     case SurfaceExpr.AscribeExpr(e, t, _)          => mentionsIdent(e, targetName) || mentionsIdent(t, targetName)
+    case SurfaceExpr.ListLitExpr(elems, _)         => elems.exists(mentionsIdent(_, targetName))
+    case SurfaceExpr.CalcExpr(start, steps, _) =>
+      mentionsIdent(start, targetName) || steps.exists(s => mentionsIdent(s.rhs, targetName) || mentionsIdent(s.proof, targetName))
     case _                                         => false
+  }
+
+  /**
+   * Elaborate a human- and AI-readable `calc { a === b by { ... } === c by { ... } }`
+   * equational reasoning block into a pure kernel `Eq` transitivity chain!
+   */
+  private def elaborateCalc(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    startExpr: SurfaceExpr,
+    steps: List[CalcStep],
+    span: Span
+  ): Either[Diagnostic, (Term, Term, ElabEnv)] = boundary {
+    requireSymbol(env, "Eq", span) match {
+      case Left(err) => break(Left(err))
+      case Right(()) => ()
+    }
+    val (startTerm, eqTypeRaw, env0) = inferExpr(env, metaCtx, localCtx, startExpr) match {
+      case Left(err) => break(Left(err))
+      case Right(r)  => r
+    }
+    val eqType = metaCtx.zonk(eqTypeRaw, localCtx.depth)
+    var curEnv = env0
+    var curTerm = startTerm
+    var accProofOpt: Option[Term] = None
+
+    for (step <- steps) {
+      val (nextTerm, env1) = checkExpr(curEnv, metaCtx, localCtx, step.rhs, eqType) match {
+        case Left(err) => break(Left(err))
+        case Right(r)  => r
+      }
+      val stepEqType = Term.apps(Term.Ind("Eq"), List(eqType, curTerm, nextTerm))
+      val (stepProof, env2) = checkExpr(env1, metaCtx, localCtx, step.proof, stepEqType) match {
+        case Left(err) => break(Left(err))
+        case Right(r)  => r
+      }
+      accProofOpt = Some(accProofOpt match {
+        case None => stepProof
+        case Some(prevProof) =>
+          // Transitivity via pure kernel Match on Eq: prevProof: start === curTerm, stepProof: curTerm === nextTerm
+          val eqType1 = Term.shift(eqType, 1)
+          val cur1 = Term.shift(curTerm, 1)
+          val eqType2 = Term.shift(eqType, 2)
+          val start2 = Term.shift(startTerm, 2)
+          val transMotive = Term.Lam(
+            "_y",
+            eqType,
+            Term.Lam(
+              "_q",
+              Term.apps(Term.Ind("Eq"), List(eqType1, cur1, Term.Var(0))),
+              Term.apps(Term.Ind("Eq"), List(eqType2, start2, Term.Var(1)))
+            )
+          )
+          Term.Match("Eq", List(eqType, curTerm), transMotive, stepProof, List(MatchBranch("Refl", Nil, prevProof)))
+      })
+      curTerm = nextTerm
+      curEnv = env2
+    }
+
+    val finalProof = accProofOpt.get
+    val finalType = Term.apps(Term.Ind("Eq"), List(eqType, startTerm, curTerm))
+    Right((finalProof, finalType, curEnv))
   }
 }

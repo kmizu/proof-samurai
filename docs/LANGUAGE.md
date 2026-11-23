@@ -62,14 +62,26 @@ theorem addZeroRight(value: Nat): value + 0 === value = by {
 | `a + b`, `a - b`, `a * b` | `Nat` arithmetic (`add`, `sub`, `mul`) |
 | `a == b`, `a != b`, `a <= b`, `a < b` | Boolean comparisons (`beq`, `ble`, `blt`) |
 | `a && b`, `a \|\| b`, `!a` | Boolean operations (`andBool`, `orBool`, `notBool`) |
-| `h :: t`, `xs ++ ys` | `List.Cons`, `append` |
+| `h :: t`, `xs ++ ys`, `[1, 2, 3]`, `[]` | `List.Cons`, `append`, and list literals / list patterns |
 | `xs.length`, `pair.first` | UFCS method calls and `case class` field projections |
 | `0, 1, 2`, `true, false` | `Nat` and `Bool` literals |
 
+## Equational Reasoning (`calc { ... }`)
+```scala
+theorem calcExample[Element](first: List[Element], second: List[Element], third: List[Element]):
+  length((first ++ second) ++ third) === length(third) + (length(first) + length(second)) = {
+  calc {
+    length((first ++ second) ++ third)
+    === (length(first) + length(second)) + length(third) by { simp }
+    === length(third) + (length(first) + length(second)) by { arith }
+  }
+}
+```
+
 ## Built-In Tactics (`by { ... }`)
 - **Structure**: `intro(x)`, `intros(x, y)`, `revert(x)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`
-- **Equality**: `refl`, `symmetry`, `trans(mid)`, `rewrite(eq)`, `rewriteRev(eq)`, `subst(eq)`, `congr`
+- **Equality**: `refl`, `symmetry`, `trans(mid)`, `rewrite(h1, h2, ...)`, `rewriteRev(h1, ...)`, `subst(eq)`, `congr`
 - **Inductives**: `induction(x) { case ... => { ... } }`, `cases(expr) { case ... => { ... } }`, `cases(expr, eqHyp) { case ... => { ... } }`, `discriminate`, `injection(h, name)`
 - **Logic**: `split`, `left`, `right`, `exists(witness)`, `contradiction`, `exfalso`
-- **Automation**: `unfold(defName)`, `simp`, `simp(lem1, lem2)`, `trivial`, `decide`, `auto` (or `samurai`)
+- **Automation**: `unfold(defName)`, `simp`, `simp(*)`, `simp(lem1, lem2)`, `arith` / `ring` (sound proof-producing Nat commutative semiring solver), `trivial`, `decide`, `auto` (or `samurai`)
 - **Development**: `?holeName`, `sorry` (explicitly tracked in kernel trust reports!)

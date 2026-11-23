@@ -3,6 +3,8 @@ package samurai.ai
 import java.io.{BufferedReader, InputStreamReader, PrintWriter}
 import java.nio.file.{Path, Paths}
 import scala.collection.mutable
+import scala.util.boundary
+import scala.util.boundary.break
 import samurai.elab.{ElabEnv, Elaborator, MetaContext}
 import samurai.extract.{Erasure, JsEmitter, Scala3Emitter, TsEmitter}
 import samurai.kernel.*
@@ -45,9 +47,11 @@ final class ProofSession(initialSearchPaths: List[Path] = List(Paths.get("."), P
       case "startProof"    => handleStartProof(params)
       case "step"          => handleStep(params)
       case "batchStep"     => handleBatchStep(params)
+      case "proveGoal"     => handleProveGoal(params)
       case "autoSolve"     => handleAutoSolve(params)
       case "getProofTrace" => handleGetProofTrace(params)
       case "inspectHoles"  => handleInspectHoles(params)
+      case "listSymbols"   => Right(handleListSymbols())
       case "suggest"       => handleSuggest(params)
       case "searchLemmas"  => handleSearchLemmas(params)
       case "extract"       => handleExtract(params)
@@ -267,22 +271,171 @@ final class ProofSession(initialSearchPaths: List[Path] = List(Paths.get("."), P
     )
   }
 
+  /**
+   * One-shot AI proof refinement call: tests a candidate tactic sequence against a theorem statement.
+   * Returns either kernel verification confirmation OR the exact failing step, folded goal state,
+   * and ranked tactic suggestions for the next LLM refinement turn.
+   */
+  private def handleProveGoal(params: Json): Either[(String, String), Json] = boundary {
+    val theoremName = params.field("name").flatMap(_.asString).getOrElse(s"goal_$nextStateId")
+    val statementStr = params.field("statement").flatMap(_.asString).getOrElse("")
+    val tacticsList = params.field("tactics").flatMap(_.asArr).getOrElse(Nil).flatMap(_.asString)
+    if (statementStr.isEmpty) break(Left(("RPC003", "Missing 'statement' parameter")))
+
+    val goalType: Term = Parser.parseExprString("<proveGoal>", statementStr) match {
+      case Left(diag) => break(Left((diag.code, diag.message)))
+      case Right(surfaceExpr) =>
+        val metaCtx = new MetaContext()
+        Elaborator.elaborateType(currentEnv, metaCtx, LocalCtx.empty, surfaceExpr) match {
+          case Left(diag) => break(Left((diag.code, diag.message)))
+          case Right(raw) =>
+            val z = metaCtx.zonk(raw, 0)
+            TypeChecker.inferSort(currentEnv.kernelEnv, LocalCtx.empty, z) match {
+              case Left(kErr) => break(Left((kErr.code, kErr.message)))
+              case Right(_)   => z
+            }
+        }
+    }
+
+    var workingEnv = currentEnv
+    var state = ProofState.initial(LocalCtx.empty, goalType, label = theoremName)
+
+    for ((tacticStr, stepIdx) <- tacticsList.zipWithIndex) {
+      Parser.parseTacticString("<proveGoal-step>", tacticStr) match {
+        case Left(diag) =>
+          val sugs = state.currentGoal.map(ProofSearch.suggest(workingEnv, _)).getOrElse(Nil)
+          break(
+            Right(
+              Json.obj(
+                "verified" -> Json.Bool(false),
+                "failedAtStep" -> Json.Num(stepIdx),
+                "failedTactic" -> Json.Str(tacticStr),
+                "error" -> Json.Str(diag.message),
+                "remainingGoals" -> Json.Arr(state.openGoals.map(_.toJson(workingEnv.kernelEnv))),
+                "suggestions" -> Json.Arr(sugs.map(_.toJson))
+              )
+            )
+          )
+        case Right(stmts) =>
+          Tactics.runScript(workingEnv, state, stmts) match {
+            case Left(diag) =>
+              val sugs = state.currentGoal.map(ProofSearch.suggest(workingEnv, _)).getOrElse(Nil)
+              break(
+                Right(
+                  Json.obj(
+                    "verified" -> Json.Bool(false),
+                    "failedAtStep" -> Json.Num(stepIdx),
+                    "failedTactic" -> Json.Str(tacticStr),
+                    "error" -> Json.Str(diag.message),
+                    "remainingGoals" -> Json.Arr(state.openGoals.map(_.toJson(workingEnv.kernelEnv))),
+                    "suggestions" -> Json.Arr(sugs.map(_.toJson))
+                  )
+                )
+              )
+            case Right((nextEnv, nextState)) =>
+              workingEnv = nextEnv
+              state = nextState
+          }
+      }
+    }
+
+    if (!state.isSolved) {
+      val sugs = state.currentGoal.map(ProofSearch.suggest(workingEnv, _)).getOrElse(Nil)
+      Right(
+        Json.obj(
+          "verified" -> Json.Bool(false),
+          "error" -> Json.Str(s"Proof incomplete: ${state.openGoals.length} remaining goal(s)"),
+          "remainingGoals" -> Json.Arr(state.openGoals.map(_.toJson(workingEnv.kernelEnv))),
+          "suggestions" -> Json.Arr(sugs.map(_.toJson))
+        )
+      )
+    } else {
+      state.buildProofTerm match {
+        case Left(err) => Left(("RPC006", err))
+        case Right(proofTerm) =>
+          TypeChecker.checkDef(
+            workingEnv.kernelEnv,
+            theoremName,
+            goalType,
+            proofTerm,
+            transparent = false,
+            isTheorem = true
+          ) match {
+            case Left(kErr) =>
+              Left((kErr.code, s"Kernel rejected proof: ${kErr.message}"))
+            case Right(verifiedKernel) =>
+              currentEnv = workingEnv.copy(kernelEnv = verifiedKernel)
+              val defEntry = verifiedKernel.defs(theoremName)
+              Right(
+                Json.obj(
+                  "verified" -> Json.Bool(true),
+                  "kernelVerified" -> Json.Bool(true),
+                  "theoremName" -> Json.Str(theoremName),
+                  "axiomsUsed" -> Json.Arr(defEntry.axiomsUsed.toList.sorted.map(Json.Str(_))),
+                  "isAxiomFree" -> Json.Bool(defEntry.axiomsUsed.isEmpty),
+                  "proofTerm" -> Json.Str(Pretty.show(proofTerm))
+                )
+              )
+          }
+      }
+    }
+  }
+
+  private def handleListSymbols(): Json = {
+    val kEnv = currentEnv.kernelEnv
+    val inds = kEnv.inductives.values.toList.sortBy(_.name).map { ind =>
+      Json.obj(
+        "name" -> Json.Str(ind.name),
+        "sort" -> Json.Str(ind.sort.toString),
+        "type" -> Json.Str(Pretty.show(ind.fullType)),
+        "constructors" -> Json.Arr(ind.constructors.map { c =>
+          Json.obj("name" -> Json.Str(c.name), "type" -> Json.Str(Pretty.show(ind.ctorType(c))))
+        })
+      )
+    }
+    val fns = kEnv.defs.values.filterNot(_.isTheorem).toList.sortBy(_.name).map { d =>
+      Json.obj("name" -> Json.Str(d.name), "type" -> Json.Str(Pretty.show(d.ty)))
+    }
+    val thms = kEnv.defs.values.filter(_.isTheorem).toList.sortBy(_.name).map { d =>
+      Json.obj(
+        "name" -> Json.Str(d.name),
+        "type" -> Json.Str(Pretty.show(d.ty)),
+        "isSimp" -> Json.Bool(currentEnv.simpLemmas.contains(d.name)),
+        "isAxiomFree" -> Json.Bool(d.axiomsUsed.isEmpty)
+      )
+    }
+    Json.obj(
+      "inductives" -> Json.Arr(inds),
+      "functions" -> Json.Arr(fns),
+      "theorems" -> Json.Arr(thms),
+      "simpLemmas" -> Json.Arr(currentEnv.simpLemmas.distinct.sorted.map(Json.Str(_)))
+    )
+  }
+
   private def handleInspectHoles(params: Json): Either[(String, String), Json] = {
     val fileName = params.field("file").flatMap(_.asString).getOrElse("<inspect>")
     val source = params.field("source").flatMap(_.asString).getOrElse("")
-    // Run against a scratch copy of currentEnv to gather holes without mutating session on error
-    val envBefore = currentEnv.copy(holes = Nil)
-    val checkedHoles = Elaborator.checkSource(fileName, source, envBefore) match {
+    // Resilient whole-file hole collection mode!
+    val envBefore = currentEnv.copy(holes = Nil, holeCollectionMode = true)
+    Elaborator.checkSource(fileName, source, envBefore) match {
       case Right(nextEnv) =>
-        nextEnv.holes.map { h =>
+        val holesJson = nextEnv.holes.map { h =>
           val goal = ProofGoal(0, h.name.getOrElse("hole"), h.localCtx, h.expectedType)
           val sugs = ProofSearch.suggest(nextEnv, goal)
-          Json.obj("hole" -> h.toJson(nextEnv.kernelEnv), "suggestions" -> Json.Arr(sugs.map(_.toJson)))
+          val relevant = ProofSearch.searchMatchingLemmas(nextEnv, goal, limit = 5).map { case (n, t) =>
+            Json.obj("name" -> Json.Str(n), "type" -> Json.Str(t))
+          }
+          Json.obj(
+            "hole" -> h.toJson(nextEnv.kernelEnv),
+            "goalShape" -> Json.Str(goal.goalShape(nextEnv.kernelEnv)),
+            "suggestions" -> Json.Arr(sugs.map(_.toJson)),
+            "relevantLemmas" -> Json.Arr(relevant)
+          )
         }
+        Right(Json.obj("holeCount" -> Json.Num(holesJson.length), "holes" -> Json.Arr(holesJson)))
       case Left(diag) =>
-        List(Json.obj("diagnostic" -> diag.toJson))
+        Left((diag.code, diag.formatHuman(Some(source))))
     }
-    Right(Json.obj("holes" -> Json.Arr(checkedHoles)))
   }
 
   private def handleSuggest(params: Json): Either[(String, String), Json] = {

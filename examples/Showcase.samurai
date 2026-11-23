@@ -1,0 +1,50 @@
+// Showcase.samurai — Pragmatic, readable, AI-friendly Proof Samurai showcase
+import Prelude.*
+import Nat.*
+import List.*
+import Queue.*
+import Sorting.*
+
+// 1. Clean Scala 3 list literals and readable evaluation
+def sampleNumbers: List[Nat] = [4, 1, 3, 0, 2]
+
+theorem sortSample: insertionSort([4, 1, 3, 0, 2]) === [0, 1, 2, 3, 4] = by {
+  decide
+}
+
+// 2. One-word commutative semiring arithmetic solver (`arith` / `ring`, 100% kernel-checked!)
+theorem rearrangeLinear(first: Nat, second: Nat, third: Nat):
+  (first + second) + (third + 0) === third + (second + first) = by {
+  arith
+}
+
+theorem expandBinomial(left: Nat, right: Nat, factor: Nat):
+  (left + right) * (factor + 1) === (left * factor + right * factor) + (right + left) = by {
+  arith
+}
+
+// 3. Human- and AI-readable equational `calc { ... }` proofs!
+theorem calcExample[Element](first: List[Element], second: List[Element], third: List[Element]):
+  length((first ++ second) ++ third) === length(third) + (length(first) + length(second)) = {
+  calc {
+    length((first ++ second) ++ third)
+    === (length(first) + length(second)) + length(third) by { simp }
+    === length(third) + (length(first) + length(second)) by { arith }
+  }
+}
+
+// 4. Verified functional two-stack queue in action
+def builtQueue: Queue[Nat] = {
+  val step1 = enqueue(10, emptyQueue[Nat])
+  val step2 = enqueue(20, step1)
+  enqueue(30, step2)
+}
+
+theorem queueOrderVerified: toList(builtQueue) === [10, 20, 30] = by {
+  decide
+}
+
+#eval insertionSort(sampleNumbers)
+#eval toList(builtQueue)
+#axioms expandBinomial
+#axioms calcExample

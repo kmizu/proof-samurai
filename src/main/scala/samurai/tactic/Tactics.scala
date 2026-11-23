@@ -52,7 +52,7 @@ object Tactics {
       case TacticStmt.Refl(span)                        => tacticRefl(env, state, span)
       case TacticStmt.Symmetry(span)                    => tacticSymmetry(env, state, span)
       case TacticStmt.Trans(midExpr, span)              => tacticTrans(env, state, midExpr, span)
-      case TacticStmt.Rewrite(lemmaExpr, rev, span)     => tacticRewrite(env, state, lemmaExpr, rev, span)
+      case TacticStmt.Rewrite(lemmas, rev, span)             => tacticRewriteMany(env, state, lemmas, rev, span)
       case TacticStmt.Congr(span)                       => tacticCongr(env, state, span)
       case TacticStmt.Induction(target, cases, span)         => tacticInduction(env, state, target, cases, span)
       case TacticStmt.Cases(target, eqName, cases, span)     => tacticCases(env, state, target, eqName, cases, span)
@@ -68,9 +68,10 @@ object Tactics {
       case TacticStmt.Discriminate(hypOpt, span)        => tacticDiscriminate(env, state, hypOpt, span)
       case TacticStmt.Injection(hypExpr, names, span)   => tacticInjection(env, state, hypExpr, names, span)
       case TacticStmt.Have(name, propTy, proof, span)   => tacticHave(env, state, name, propTy, proof, span)
-      case TacticStmt.Unfold(defName, span)             => tacticUnfold(env, state, defName, span)
-      case TacticStmt.Simp(extras, span)                => tacticSimp(env, state, extras, span)
-      case TacticStmt.Trivial(span)                     => tacticTrivial(env, state, span)
+      case TacticStmt.Unfold(defName, span)                  => tacticUnfold(env, state, defName, span)
+      case TacticStmt.Simp(extras, useLocals, span)          => tacticSimp(env, state, extras, useLocals, span)
+      case TacticStmt.Arith(span)                            => ArithTactic.solve(env, state, span)
+      case TacticStmt.Trivial(span)                          => tacticTrivial(env, state, span)
       case TacticStmt.Auto(depthOpt, span)              => ProofSearch.tacticAuto(env, state, depthOpt.getOrElse(5), span)
       case TacticStmt.Decide(span)                      => tacticDecide(env, state, span)
       case TacticStmt.Assumption(span)                  => tacticAssumption(env, state, span)
@@ -449,6 +450,26 @@ object Tactics {
     }
   }
 
+  private def tacticRewriteMany(
+    env: ElabEnv,
+    state: ProofState,
+    lemmas: List[SurfaceExpr],
+    reverse: Boolean,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = boundary {
+    var curEnv = env
+    var curState = state
+    for (lemmaExpr <- lemmas) {
+      tacticRewrite(curEnv, curState, lemmaExpr, reverse, span) match {
+        case Left(err) => break(Left(err))
+        case Right((nextEnv, nextState)) =>
+          curEnv = nextEnv
+          curState = nextState
+      }
+    }
+    Right((curEnv, curState))
+  }
+
   private def tacticRewrite(
     env: ElabEnv,
     state: ProofState,
@@ -644,7 +665,7 @@ object Tactics {
 
     def go(cur: Term, bindDepth: Int): (Term, Int) = {
       val shiftedNeedle = Term.shift(needleNorm, bindDepth)
-      if (cur == shiftedNeedle) {
+      if (Term.alphaEq(cur, shiftedNeedle)) {
         return (Term.Var(replacementVarIdx + bindDepth), 1)
       }
       cur match {
@@ -1646,6 +1667,7 @@ object Tactics {
     env: ElabEnv,
     state: ProofState,
     extraLemmas: List[SurfaceExpr],
+    includeLocalHyps: Boolean,
     span: Span
   ): Either[Diagnostic, (ElabEnv, ProofState)] = {
     val goal = state.openGoals.head
@@ -1659,7 +1681,7 @@ object Tactics {
       state.replaceHead(List(subGoal), sols => sols(subId), subId + 1)
     }
 
-    // 2. Repeatedly rewrite with extra lemmas, @simp lemmas, and local Eq hypotheses
+    // 2. Repeatedly rewrite with extra lemmas, optional local Eq hypotheses (`simp(*)`), and @simp lemmas
     var progress = true
     var rounds = 0
     while (progress && rounds < 12 && !curState.isSolved) {
@@ -1672,6 +1694,27 @@ object Tactics {
           case Right((nextEnv, nextState)) =>
             curEnv = nextEnv; curState = nextState; progress = true
           case Left(_) => ()
+        }
+      }
+
+      // Optionally rewrite using local equality hypotheses (`simp(*)`)
+      if (includeLocalHyps && !curState.isSolved && !progress) {
+        val g = curState.openGoals.head
+        for (idx <- g.localCtx.entries.indices if !curState.isSolved && !progress) {
+          val hypTy = g.localCtx.lookupType(idx).get
+          extractEqGoal(curEnv.kernelEnv, g.localCtx, hypTy).foreach { case (_, lhs, rhs) =>
+            // Guard against trivial or cyclic rewrites (e.g. x === f(x))
+            val lhsStr = Pretty.show(lhs, g.localCtx.names)
+            val rhsStr = Pretty.show(rhs, g.localCtx.names)
+            if (lhs != rhs && !rhsStr.contains(lhsStr)) {
+              val metaCtx = new MetaContext()
+              rewriteWithCoreLemma(curEnv, curState, g, metaCtx, Term.Var(idx), hypTy, reverse = false, span) match {
+                case Right((nextEnv, nextState)) =>
+                  curEnv = nextEnv; curState = nextState; progress = true
+                case Left(_) => ()
+              }
+            }
+          }
         }
       }
 
@@ -1817,13 +1860,22 @@ object Tactics {
     val goal = state.openGoals.head
     val holeInfo = HoleInfo(nameOpt, span, goal.localCtx, goal.targetType)
     val nextEnv = env.copy(holes = env.holes :+ holeInfo)
-    Left(
-      Diagnostic(
-        Diagnostic.Severity.Info,
-        "H001",
-        s"Proof hole ${nameOpt.map("?" + _).getOrElse("?")}:\n${goal.formatHuman(env.kernelEnv)}",
-        span
+    if (env.holeCollectionMode) {
+      // Record the hole and continue inspecting the rest of the file!
+      val (envWithSorry, _) = nextEnv.ensureSorryAxiom
+      val isProp = TypeChecker.inferSort(envWithSorry.kernelEnv, goal.localCtx, goal.targetType).contains(Sort.Prop)
+      val sorryConst = if (isProp) "$sorryProp" else "$sorry"
+      val placeholder = Term.App(Term.Const(sorryConst), goal.targetType)
+      Right((envWithSorry, state.replaceHead(Nil, _ => placeholder, state.nextGoalId, markSorry = true)))
+    } else {
+      Left(
+        Diagnostic(
+          Diagnostic.Severity.Info,
+          "H001",
+          s"Proof hole ${nameOpt.map("?" + _).getOrElse("?")}:\n${goal.formatHuman(env.kernelEnv)}",
+          span
+        )
       )
-    )
+    }
   }
 }

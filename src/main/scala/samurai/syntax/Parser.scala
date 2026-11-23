@@ -699,6 +699,19 @@ object Parser {
         val inner = parsePattern()
         expect(TokenKind.RParen, "')' in pattern")
         inner
+      case TokenKind.LBracket =>
+        val start = advance()
+        val elems = List.newBuilder[Pattern]
+        if (current.kind != TokenKind.RBracket) {
+          var more = true
+          while (more) {
+            elems += parsePattern()
+            if (current.kind == TokenKind.Comma) advance()
+            else more = false
+          }
+        }
+        val end = expect(TokenKind.RBracket, "']' in list pattern")
+        Pattern.ListLit(elems.result(), start.span.merge(end.span))
       case TokenKind.Ident(first) =>
         val startTok = advance()
         if (current.kind == TokenKind.Dot) {
@@ -788,6 +801,20 @@ object Parser {
         expect(TokenKind.RParen, "')'")
         result
 
+      case TokenKind.LBracket =>
+        val start = advance()
+        val elems = List.newBuilder[SurfaceExpr]
+        if (current.kind != TokenKind.RBracket) {
+          var more = true
+          while (more) {
+            elems += expr()
+            if (current.kind == TokenKind.Comma) advance()
+            else more = false
+          }
+        }
+        val end = expect(TokenKind.RBracket, "']' closing list literal")
+        SurfaceExpr.ListLitExpr(elems.result(), start.span.merge(end.span))
+
       case TokenKind.LBrace =>
         parseBlockExpr()
 
@@ -796,6 +823,9 @@ object Parser {
 
       case TokenKind.KwBy =>
         parseTacticBlock()
+
+      case TokenKind.KwCalc =>
+        parseCalcBlock()
 
       case other =>
         fail("P012", s"Expected expression, found $other")
@@ -863,6 +893,36 @@ object Parser {
       SurfaceExpr.TacticBlockExpr(tactics, start.span.merge(end.span))
     }
 
+    private def parseCalcBlock(): SurfaceExpr.CalcExpr = {
+      val start = expect(TokenKind.KwCalc, "'calc'")
+      expect(TokenKind.LBrace, "'{' to open calc block")
+      skipSemis()
+      val initialExpr = parseComparison()
+      val steps = List.newBuilder[CalcStep]
+      skipSemis()
+      while (current.kind == TokenKind.EqEqEq) {
+        val eqTok = advance()
+        val nextRhs = parseComparison()
+        val proofExpr = current.kind match {
+          case TokenKind.KwBy => parseTacticBlock()
+          case TokenKind.Eq =>
+            advance()
+            expr()
+          case TokenKind.LBrace => parseBlockExpr()
+          case other =>
+            fail("P018", s"Expected 'by {{ ... }}' or '= proof' after calc step, found $other")
+        }
+        steps += CalcStep(nextRhs, proofExpr, eqTok.span.merge(proofExpr.span))
+        skipSemis()
+      }
+      val end = expect(TokenKind.RBrace, "'}' to close calc block")
+      val stepList = steps.result()
+      if (stepList.isEmpty) {
+        fail("P019", "'calc' block must contain at least one '=== rhs by { ... }' step", start.span.merge(end.span))
+      }
+      SurfaceExpr.CalcExpr(initialExpr, stepList, start.span.merge(end.span))
+    }
+
     private def parseTacticsUntil(endToken: TokenKind): List[TacticStmt] = {
       val stmts = List.newBuilder[TacticStmt]
       skipSemis()
@@ -912,12 +972,14 @@ object Parser {
             TacticStmt.Trans(mid, start.span.merge(peek(-1).span))
 
           case "rewrite" =>
-            val lemma = parseSingleParenExpr("rewrite")
-            TacticStmt.Rewrite(lemma, reverse = false, start.span.merge(peek(-1).span))
+            val lemmas = parseParenExprList()
+            if (lemmas.isEmpty) fail("P015", "'rewrite' requires at least one lemma argument", start.span)
+            TacticStmt.Rewrite(lemmas, reverse = false, start.span.merge(peek(-1).span))
 
           case "rewriteRev" | "rewriteBack" =>
-            val lemma = parseSingleParenExpr("rewriteRev")
-            TacticStmt.Rewrite(lemma, reverse = true, start.span.merge(peek(-1).span))
+            val lemmas = parseParenExprList()
+            if (lemmas.isEmpty) fail("P015", "'rewriteRev' requires at least one lemma argument", start.span)
+            TacticStmt.Rewrite(lemmas, reverse = true, start.span.merge(peek(-1).span))
 
           case "congr" | "congruence" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
@@ -1021,10 +1083,32 @@ object Parser {
             TacticStmt.Unfold(defName, start.span.merge(end.span))
 
           case "simp" =>
-            val extras =
-              if (current.kind == TokenKind.LParen) parseParenExprList()
-              else Nil
-            TacticStmt.Simp(extras, start.span.merge(peek(-1).span))
+            if (current.kind == TokenKind.LParen) {
+              expect(TokenKind.LParen, "'('")
+              var includeLocals = false
+              val extras = List.newBuilder[SurfaceExpr]
+              if (current.kind != TokenKind.RParen) {
+                var more = true
+                while (more) {
+                  if (current.kind == TokenKind.Star) {
+                    advance()
+                    includeLocals = true
+                  } else {
+                    extras += expr()
+                  }
+                  if (current.kind == TokenKind.Comma) advance()
+                  else more = false
+                }
+              }
+              expect(TokenKind.RParen, "')'")
+              TacticStmt.Simp(extras.result(), includeLocals, start.span.merge(peek(-1).span))
+            } else {
+              TacticStmt.Simp(Nil, includeLocalHyps = false, start.span)
+            }
+
+          case "arith" | "ring" =>
+            if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
+            TacticStmt.Arith(start.span)
 
           case "trivial" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }

@@ -18,6 +18,7 @@ enum TokenKind {
   case KwIf
   case KwElse
   case KwBy
+  case KwCalc
   case KwForall
   case KwExists
   case KwReturning

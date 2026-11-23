@@ -1,0 +1,75 @@
+module Option {
+  import Prelude.*
+
+  def mapOption[Input, Output](transform: Input => Output, option: Option[Input]): Option[Output] = {
+    option match {
+      case Option.None => Option.None[Output]
+      case Option.Some(value) => Option.Some(transform(value))
+    }
+  }
+
+  def flatMapOption[Input, Output](transform: Input => Option[Output], option: Option[Input]): Option[Output] = {
+    option match {
+      case Option.None => Option.None[Output]
+      case Option.Some(value) => transform(value)
+    }
+  }
+
+  def getOrElse[Element](option: Option[Element], defaultValue: Element): Element = {
+    option match {
+      case Option.None => defaultValue
+      case Option.Some(value) => value
+    }
+  }
+
+  // =========================================================================
+  // Verified Functor & Monad Laws (100% Axiom-Free!)
+  // =========================================================================
+
+  @simp
+  theorem optionMapId[Element](option: Option[Element]):
+    mapOption((elem: Element) => elem, option) === option = by {
+    cases(option) {
+      case None => { refl }
+      case Some(_) => { refl }
+    }
+  }
+
+  theorem optionMapCompose[First, Second, Third](
+    outerFn: Second => Third,
+    innerFn: First => Second,
+    option: Option[First]
+  ): mapOption(outerFn, mapOption(innerFn, option)) === mapOption((elem: First) => outerFn(innerFn(elem)), option) = by {
+    cases(option) {
+      case None => { refl }
+      case Some(_) => { refl }
+    }
+  }
+
+  theorem optionFlatMapLeftId[Input, Output](value: Input, transform: Input => Option[Output]):
+    flatMapOption(transform, Option.Some(value)) === transform(value) = by {
+    refl
+  }
+
+  @simp
+  theorem optionFlatMapRightId[Element](option: Option[Element]):
+    flatMapOption((elem: Element) => Option.Some(elem), option) === option = by {
+    cases(option) {
+      case None => { refl }
+      case Some(_) => { refl }
+    }
+  }
+
+  theorem optionFlatMapAssoc[First, Second, Third](
+    option: Option[First],
+    firstStep: First => Option[Second],
+    secondStep: Second => Option[Third]
+  ):
+    flatMapOption(secondStep, flatMapOption(firstStep, option)) ===
+      flatMapOption((elem: First) => flatMapOption(secondStep, firstStep(elem)), option) = by {
+    cases(option) {
+      case None => { refl }
+      case Some(_) => { refl }
+    }
+  }
+}

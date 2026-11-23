@@ -167,5 +167,70 @@ class AiProtocolSuite extends FunSuite {
     )
     assertEquals(autoDone.field("ok"), Some(Json.Bool(true)))
     assertEquals(autoDone.field("result").flatMap(_.field("kernelVerified")), Some(Json.Bool(true)))
+
+    // 10. Test one-shot AI proof refinement loop (`proveGoal`): first fail with diagnostic + suggestions, then succeed!
+    val failAttempt = session.handleRequest(
+      Json.obj(
+        "id" -> Json.Num(14),
+        "method" -> Json.Str("proveGoal"),
+        "params" -> Json.obj(
+          "name" -> Json.Str("aiArithDemo"),
+          "statement" -> Json.Str("forall (x: Nat, y: Nat) => (x + y) + 0 === y + x"),
+          "tactics" -> Json.Arr(List(Json.Str("intros(x, y)"), Json.Str("refl")))
+        )
+      )
+    )
+    assertEquals(failAttempt.field("result").flatMap(_.field("verified")), Some(Json.Bool(false)))
+    assertEquals(failAttempt.field("result").flatMap(_.field("failedAtStep")), Some(Json.Num(1)))
+    // Verify folded human/AI-readable goal (no raw `fix add[0]` dump!)
+    val remGoalText = failAttempt
+      .field("result")
+      .flatMap(_.field("remainingGoals"))
+      .flatMap(_.asArr)
+      .flatMap(_.headOption)
+      .flatMap(_.field("normalizedTarget"))
+      .flatMap(_.asString)
+      .getOrElse("")
+    assert(!remGoalText.contains("fix add"), s"Goal should be cleanly folded, got: $remGoalText")
+    assert(remGoalText.contains("+"), s"Goal should use readable '+' infix, got: $remGoalText")
+
+    val passAttempt = session.handleRequest(
+      Json.obj(
+        "id" -> Json.Num(15),
+        "method" -> Json.Str("proveGoal"),
+        "params" -> Json.obj(
+          "name" -> Json.Str("aiArithDemo"),
+          "statement" -> Json.Str("forall (x: Nat, y: Nat) => (x + y) + 0 === y + x"),
+          "tactics" -> Json.Arr(List(Json.Str("intros(x, y)"), Json.Str("arith")))
+        )
+      )
+    )
+    assertEquals(passAttempt.field("result").flatMap(_.field("verified")), Some(Json.Bool(true)))
+    assertEquals(passAttempt.field("result").flatMap(_.field("isAxiomFree")), Some(Json.Bool(true)))
+
+    // 11. Test whole-file resilient `inspectHoles` collecting multiple holes with goalShape & suggestions!
+    val draftFile =
+      """
+        |theorem holeOne(n: Nat): n + 0 === n = by {
+        |  ?fillMeOne
+        |}
+        |theorem holeTwo(a: Nat, b: Nat): a + b === b + a = by {
+        |  ?fillMeTwo
+        |}
+      """.stripMargin
+    val holesRes = session.handleRequest(
+      Json.obj(
+        "id" -> Json.Num(16),
+        "method" -> Json.Str("inspectHoles"),
+        "params" -> Json.obj("file" -> Json.Str("draft.samurai"), "source" -> Json.Str(draftFile))
+      )
+    )
+    assertEquals(holesRes.field("ok"), Some(Json.Bool(true)))
+    assertEquals(holesRes.field("result").flatMap(_.field("holeCount")), Some(Json.Num(2)))
+
+    // 12. Test compact `listSymbols` catalog for AI grounding
+    val symRes = session.handleRequest(Json.obj("id" -> Json.Num(17), "method" -> Json.Str("listSymbols")))
+    assertEquals(symRes.field("ok"), Some(Json.Bool(true)))
+    assert(symRes.field("result").flatMap(_.field("simpLemmas")).flatMap(_.asArr).exists(_.nonEmpty))
   }
 }

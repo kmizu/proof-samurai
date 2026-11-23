@@ -68,6 +68,30 @@ object Term {
   def apps(fn: Term, args: List[Term]): Term =
     args.foldLeft(fn)(Term.App(_, _))
 
+  /** Alpha-equivalence of De Bruijn terms (ignores display binder names). */
+  def alphaEq(left: Term, right: Term): Boolean = (left, right) match {
+    case (Term.USort(s1), Term.USort(s2))               => s1 == s2
+    case (Term.Var(i1), Term.Var(i2))                   => i1 == i2
+    case (Term.Const(c1), Term.Const(c2))               => c1 == c2
+    case (Term.Ind(i1), Term.Ind(i2))                   => i1 == i2
+    case (Term.Ctor(i1, c1), Term.Ctor(i2, c2))         => i1 == i2 && c1 == c2
+    case (Term.Pi(_, d1, c1), Term.Pi(_, d2, c2))       => alphaEq(d1, d2) && alphaEq(c1, c2)
+    case (Term.Lam(_, d1, b1), Term.Lam(_, d2, b2))     => alphaEq(d1, d2) && alphaEq(b1, b2)
+    case (Term.App(f1, a1), Term.App(f2, a2))           => alphaEq(f1, f2) && alphaEq(a1, a2)
+    case (Term.Let(_, t1, v1, b1), Term.Let(_, t2, v2, b2)) =>
+      alphaEq(t1, t2) && alphaEq(v1, v2) && alphaEq(b1, b2)
+    case (Term.Match(i1, ps1, m1, s1, brs1), Term.Match(i2, ps2, m2, s2, brs2)) =>
+      i1 == i2 &&
+        ps1.length == ps2.length && ps1.zip(ps2).forall { case (a, b) => alphaEq(a, b) } &&
+        alphaEq(m1, m2) && alphaEq(s1, s2) &&
+        brs1.length == brs2.length && brs1.zip(brs2).forall { case (b1, b2) =>
+          b1.ctorName == b2.ctorName && b1.arity == b2.arity && alphaEq(b1.body, b2.body)
+        }
+    case (Term.Fix(_, r1, t1, b1), Term.Fix(_, r2, t2, b2)) =>
+      r1 == r2 && alphaEq(t1, t2) && alphaEq(b1, b2)
+    case _ => false
+  }
+
   def splitApps(t: Term): (Term, List[Term]) = {
     def loop(cur: Term, acc: List[Term]): (Term, List[Term]) = cur match {
       case Term.App(f, a) => loop(f, a :: acc)

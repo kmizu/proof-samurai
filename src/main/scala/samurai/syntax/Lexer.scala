@@ -23,6 +23,7 @@ object Lexer {
     "if"        -> TokenKind.KwIf,
     "else"      -> TokenKind.KwElse,
     "by"        -> TokenKind.KwBy,
+    "calc"      -> TokenKind.KwCalc,
     "forall"    -> TokenKind.KwForall,
     "exists"    -> TokenKind.KwExists,
     "returning" -> TokenKind.KwReturning,

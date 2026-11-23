@@ -142,8 +142,14 @@ object ProofSearch {
         }
 
       case Term.Ind("Eq") =>
+        // Try proof-producing Nat arithmetic solver first!
+        ArithTactic.solve(env, state, span) match {
+          case Right((e1, s1)) if s1.isSolved =>
+            break(Some((e1, s1)))
+          case _ => ()
+        }
         // Try simp once on equality goals
-        Tactics.step(env, state, TacticStmt.Simp(Nil, span)) match {
+        Tactics.step(env, state, TacticStmt.Simp(Nil, includeLocalHyps = true, span)) match {
           case Right((e1, s1)) if s1.isSolved =>
             break(Some((e1, s1)))
           case Right((e1, s1)) =>
@@ -229,7 +235,11 @@ object ProofSearch {
 
     head match {
       case Term.Ind("Eq") =>
+        if (ArithTactic.solve(env, state, Span.synthetic).isRight) {
+          suggestions += TacticSuggestion("arith", 0.96, "Closes Nat algebraic equality automatically via semiring normalization")
+        }
         suggestions += TacticSuggestion("simp", 0.85, "Normalize and rewrite using @simp lemmas")
+        suggestions += TacticSuggestion("simp(*)", 0.83, "Normalize and rewrite using local equality hypotheses and @simp lemmas")
         if (Tactics.step(env, state, TacticStmt.Congr(Span.synthetic)).isRight) {
           suggestions += TacticSuggestion("congr", 0.82, "Reduce equality of applications to equality of arguments")
         }

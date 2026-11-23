@@ -50,7 +50,7 @@ class ElaboratorTacticsSuite extends FunSuite {
 
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
-    assert(env.directives.exists(d => d.directive == "eval" && d.output.contains("Nat.Succ")))
+    assert(env.directives.exists(d => d.directive == "eval" && d.output == "6"), s"Expected readable eval output '6', got ${env.directives}")
     assert(env.directives.exists(d => d.directive == "axioms" && d.output.contains("100% axiom-free")))
   }
 
@@ -186,5 +186,56 @@ class ElaboratorTacticsSuite extends FunSuite {
 
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+  }
+
+  test("pragmatic readable features: list literals, calc blocks, arith semiring solver, multi-rewrite, and simp(*)") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import List.*
+        |
+        |def sampleList: List[Nat] = [1, 2, 3]
+        |
+        |theorem listLitPattern(xs: List[Nat]): Bool = {
+        |  xs match {
+        |    case [] => false
+        |    case [_, _] => true
+        |    case _ => false
+        |  }
+        |}
+        |
+        |theorem arithLinear(a: Nat, b: Nat, c: Nat): (a + b) + Nat.Succ(c) === Nat.Succ(c + a) + b = by {
+        |  arith
+        |}
+        |
+        |theorem arithSemiring(a: Nat, b: Nat, c: Nat, d: Nat):
+        |  (a + b) * (c + d) === (d * b + a * c) + (b * c + d * a) = by {
+        |  arith
+        |}
+        |
+        |theorem calcProof(a: Nat, b: Nat): (a + b) + 0 === b + a = {
+        |  calc {
+        |    (a + b) + 0
+        |    === a + b by { simp }
+        |    === b + a by { arith }
+        |  }
+        |}
+        |
+        |theorem multiRewriteAndSimpStar(a: Nat, b: Nat, c: Nat, h1: a === b, h2: b === c): a + 1 === c + 1 = by {
+        |  rewrite(h1, h2)
+        |  refl
+        |}
+        |
+        |theorem simpStarDemo(a: Nat, b: Nat, eqAB: a === b): a + 0 === b = by {
+        |  simp(*)
+        |}
+        |
+        |#eval sampleList
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+    assert(env.directives.exists(d => d.directive == "eval" && d.output == "[1, 2, 3]"), s"Got ${env.directives}")
   }
 }

@@ -65,8 +65,24 @@ class StdlibSuite extends FunSuite {
     }
   }
 
+  test("Option.samurai verifies functor and monad laws 100% axiom-free") {
+    val env = checkStdlibFile("Option.samurai")
+    for (thm <- List("optionMapId", "optionMapCompose", "optionFlatMapLeftId", "optionFlatMapRightId", "optionFlatMapAssoc")) {
+      assert(env.kernelEnv.defs.contains(thm), s"Missing theorem $thm")
+      assertEquals(env.kernelEnv.defs(thm).axiomsUsed, Set.empty[String])
+    }
+  }
+
+  test("Queue.samurai verifies amortized two-stack functional queue 100% axiom-free") {
+    val env = checkStdlibFile("Queue.samurai")
+    for (thm <- List("toListEmpty", "toListEnqueue", "queueSizeEnqueue", "dequeueEmpty")) {
+      assert(env.kernelEnv.defs.contains(thm), s"Missing theorem $thm")
+      assertEquals(env.kernelEnv.defs(thm).axiomsUsed, Set.empty[String])
+    }
+  }
+
   test("all examples/*.samurai verify 100% axiom-free") {
-    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai")) {
+    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai")) {
       val path = Paths.get("examples", example)
       val source = java.nio.file.Files.readString(path)
       Elaborator.checkFile(path, ElabEnv(searchPaths = searchPaths)) match {

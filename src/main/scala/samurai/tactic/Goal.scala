@@ -12,15 +12,48 @@ final case class ProofGoal(
   localCtx: LocalCtx,
   targetType: Term
 ) {
+  private def isInternalSynthetic(name: String): Boolean =
+    name.startsWith("_ih_") || name.startsWith("_ind_")
+
+  def goalShape(kernelEnv: KernelEnv): String = {
+    val normTarget = NbE.normalize(kernelEnv, localCtx, targetType)
+    normTarget match {
+      case Term.Pi(_, _, cod) =>
+        if (Term.freeVarOccurs(cod, 0)) "forall" else "implication"
+      case other =>
+        val (head, _) = Term.splitApps(other)
+        head match {
+          case Term.Ind("Eq")     => "equality"
+          case Term.Ind("And")    => "conjunction"
+          case Term.Ind("Or")     => "disjunction"
+          case Term.Ind("Iff")    => "iff"
+          case Term.Ind("Exists") => "existential"
+          case Term.Ind("False")  => "contradiction"
+          case Term.Ind("True")   => "trivial"
+          case Term.Ind(_)        => "inductive"
+          case _                  => "proposition"
+        }
+    }
+  }
+
   def formatHuman(kernelEnv: KernelEnv): String = {
     val sb = new StringBuilder
     sb.append(s"Goal #$goalId ($label):\n")
     val entriesOuterToInner = localCtx.entries.reverse
     var prefixNames: List[String] = Nil
+    val visibleEntries = List.newBuilder[(String, String)]
     for (entry <- entriesOuterToInner) {
-      val prettyTy = Pretty.show(entry.ty, prefixNames)
-      sb.append(s"  ${entry.name} : $prettyTy\n")
+      if (!isInternalSynthetic(entry.name)) {
+        val prettyTy = Pretty.show(entry.ty, prefixNames)
+        visibleEntries += (entry.name -> prettyTy)
+      }
       prefixNames = entry.name :: prefixNames
+    }
+    val visible = visibleEntries.result()
+    val maxNameLen = visible.map(_._1.length).maxOption.getOrElse(0)
+    for ((name, prettyTy) <- visible) {
+      val pad = " " * (maxNameLen - name.length)
+      sb.append(s"  $name$pad : $prettyTy\n")
     }
     sb.append("  ----------------------------------------\n")
     val normTarget = NbE.normalize(kernelEnv, localCtx, targetType)
@@ -33,16 +66,19 @@ final case class ProofGoal(
     val entriesOuterToInner = localCtx.entries.reverse
     var prefixNames: List[String] = Nil
     for (entry <- entriesOuterToInner) {
-      hypotheses += Json.obj(
-        "name" -> Json.Str(entry.name),
-        "type" -> Json.Str(Pretty.show(entry.ty, prefixNames))
-      )
+      if (!isInternalSynthetic(entry.name)) {
+        hypotheses += Json.obj(
+          "name" -> Json.Str(entry.name),
+          "type" -> Json.Str(Pretty.show(entry.ty, prefixNames))
+        )
+      }
       prefixNames = entry.name :: prefixNames
     }
     val normTarget = NbE.normalize(kernelEnv, localCtx, targetType)
     Json.obj(
       "goalId" -> Json.Num(goalId),
       "label" -> Json.Str(label),
+      "goalShape" -> Json.Str(goalShape(kernelEnv)),
       "hypotheses" -> Json.Arr(hypotheses.result()),
       "target" -> Json.Str(Pretty.show(targetType, localCtx.names)),
       "normalizedTarget" -> Json.Str(Pretty.show(normTarget, localCtx.names))

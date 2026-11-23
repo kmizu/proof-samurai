@@ -23,6 +23,24 @@ Proof Samurai provides an AI-native, stateful, branching NDJSON JSON-RPC server 
 {"id": 3, "method": "startProof", "params": {"name": "myTheorem", "statement": "forall (n: Nat) => n + 0 === n"}}
 ```
 
+### `proveGoal` (One-Shot AI Proof Refinement)
+Test a full candidate tactic script against the Trusted Kernel in a single RPC round-trip:
+```json
+{
+  "id": 4,
+  "method": "proveGoal",
+  "params": {
+    "name": "rearrange",
+    "statement": "forall (a: Nat, b: Nat) => (a + b) + 0 === b + a",
+    "tactics": ["intros(a, b)", "arith"]
+  }
+}
+```
+If a step fails, the response pinpoints `failedAtStep`, `failedTactic`, clean folded `remainingGoals` (with `goalShape`), and ranked `suggestions` for the next refinement turn.
+
+### `listSymbols`
+Returns a compact JSON catalog of all loaded inductives, constructors, functions, theorems, and `@simp` lemmas so AI agents stay grounded in exact symbol names and types.
+
 ### `step` / `batchStep` / `autoSolve` / `getProofTrace`
 ```json
 {"id": 4, "method": "step", "params": {"stateId": 1, "tactic": "intro(n)"}}

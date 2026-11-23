@@ -75,9 +75,12 @@ enum Pattern {
   case NatLit(value: Int, span: Span)
   case BoolLit(value: Boolean, span: Span)
   case Cons(head: Pattern, tail: Pattern, span: Span)
+  case ListLit(elements: List[Pattern], span: Span)
 }
 
 final case class MatchCase(pattern: Pattern, body: SurfaceExpr, span: Span)
+
+final case class CalcStep(rhs: SurfaceExpr, proof: SurfaceExpr, span: Span)
 
 enum BlockStatement {
   case LocalVal(name: String, typeAnnotation: Option[SurfaceExpr], value: SurfaceExpr, span: Span)
@@ -91,6 +94,8 @@ enum SurfaceExpr {
   case VarExpr(name: String, span: Span)
   case IntLitExpr(value: Int, span: Span)
   case BoolLitExpr(value: Boolean, span: Span)
+  case ListLitExpr(elements: List[SurfaceExpr], span: Span)
+  case CalcExpr(start: SurfaceExpr, steps: List[CalcStep], span: Span)
   case HoleExpr(name: Option[String], span: Span)
   case SorryExpr(span: Span)
   case SelectExpr(receiver: SurfaceExpr, member: String, span: Span)
@@ -140,7 +145,7 @@ enum TacticStmt {
   case Refl(span: Span)
   case Symmetry(span: Span)
   case Trans(middle: SurfaceExpr, span: Span)
-  case Rewrite(lemma: SurfaceExpr, reverse: Boolean, span: Span)
+  case Rewrite(lemmas: List[SurfaceExpr], reverse: Boolean, span: Span)
   case Congr(span: Span)
   case Induction(target: SurfaceExpr, cases: List[TacticCaseBranch], span: Span)
   case Cases(target: SurfaceExpr, eqName: Option[String], cases: List[TacticCaseBranch], span: Span)
@@ -157,7 +162,8 @@ enum TacticStmt {
   case Injection(hypothesis: SurfaceExpr, names: List[String], span: Span)
   case Have(name: String, propType: SurfaceExpr, proof: List[TacticStmt], span: Span)
   case Unfold(name: String, span: Span)
-  case Simp(extraLemmas: List[SurfaceExpr], span: Span)
+  case Simp(extraLemmas: List[SurfaceExpr], includeLocalHyps: Boolean, span: Span)
+  case Arith(span: Span)
   case Trivial(span: Span)
   case Auto(maxDepth: Option[Int], span: Span)
   case Decide(span: Span)

@@ -1,0 +1,64 @@
+module Queue {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  // Classic functional amortized O(1) two-stack queue
+  case class Queue[Element](front: List[Element], back: List[Element])
+
+  def emptyQueue[Element]: Queue[Element] = {
+    Queue[Element](List.Nil[Element], List.Nil[Element])
+  }
+
+  def enqueue[Element](item: Element, queue: Queue[Element]): Queue[Element] = {
+    Queue(queue.front, item :: queue.back)
+  }
+
+  def toList[Element](queue: Queue[Element]): List[Element] = {
+    queue.front ++ reverse(queue.back)
+  }
+
+  def dequeue[Element](queue: Queue[Element]): Option[Pair[Element, Queue[Element]]] = {
+    queue.front match {
+      case List.Cons(head, tail) =>
+        Option.Some(Pair(head, Queue(tail, queue.back)))
+      case List.Nil =>
+        reverse(queue.back) match {
+          case List.Nil => Option.None[Pair[Element, Queue[Element]]]
+          case List.Cons(head, tail) =>
+            Option.Some(Pair(head, Queue(tail, List.Nil[Element])))
+        }
+    }
+  }
+
+  // =========================================================================
+  // Verified Functional Queue Specifications (100% Axiom-Free!)
+  // =========================================================================
+
+  @simp
+  theorem toListEmpty[Element]: toList(emptyQueue[Element]) === List.Nil[Element] = by {
+    refl
+  }
+
+  theorem toListEnqueue[Element](item: Element, queue: Queue[Element]):
+    toList(enqueue(item, queue)) === toList(queue) ++ [item] = by {
+    cases(queue) {
+      case Mk(front, back) => {
+        simp
+        rewrite(appendAssoc(front, reverse(back), [item]))
+        refl
+      }
+    }
+  }
+
+  theorem queueSizeEnqueue[Element](item: Element, queue: Queue[Element]):
+    length(toList(enqueue(item, queue))) === length(toList(queue)) + 1 = by {
+    rewrite(toListEnqueue(item, queue), lengthAppend(toList(queue), [item]))
+    simp
+  }
+
+  theorem dequeueEmpty[Element]:
+    dequeue(emptyQueue[Element]) === Option.None[Pair[Element, Queue[Element]]] = by {
+    refl
+  }
+}

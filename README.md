@@ -30,8 +30,14 @@ sbt test
 
 ### CLI Usage
 ```bash
-# Type-check and verify full insertion sort correctness (100% axiom-free strict mode)
-sbt "run check stdlib/Sorting.samurai --strict"
+# Verify every .samurai file in the repository (100% axiom-free strict mode)
+sbt "run verify-project . --strict"
+
+# Type-check and evaluate a file
+sbt "run check examples/Showcase.samurai --strict"
+
+# Inspect all open proof holes (?hole) with folded goals & AI tactic suggestions
+sbt "run goals draft.samurai --json"
 
 # Search verified definitions and theorems
 sbt "run search stdlib/Sorting.samurai sort"
@@ -95,5 +101,5 @@ theorem lengthInsertionSort(items: List[Nat]): length(insertionSort(items)) === 
 - `src/main/scala/samurai/tactic/` — LCF-style tactics (`intro`, `exact`, `apply`, `refl`, `symmetry`, `trans`, `rewrite`, `congr`, `induction`, `cases`, `split`, `left`, `right`, `exists`, `contradiction`, `discriminate`, `injection`, `have`, `unfold`, `simp`, `trivial`, `decide`, `auto`) and tactic recommender (`suggest`)
 - `src/main/scala/samurai/extract/` — Sound `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`)
 - `src/main/scala/samurai/ai/` — Branching JSON-RPC proof server (`ProofSessionServer`) and multi-line human `Repl`
-- `stdlib/` — 100% axiom-free verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Sorting`)
-- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`)
+- `stdlib/` — 100% axiom-free verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`)
+- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`)
