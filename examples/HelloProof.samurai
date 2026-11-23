@@ -1,0 +1,27 @@
+// HelloProof.samurai — Friendly introduction to Proof Samurai (Scala 3 brace syntax)
+import Prelude.*
+import Nat.*
+
+def doubleValue(number: Nat): Nat = {
+  number + number
+}
+
+// Direct proof by reflexivity / computation
+theorem doubleTwoIsFour: doubleValue(2) === 4 = by {
+  refl
+}
+
+// Structural induction proof (100% axiom-free!)
+theorem doubleSucc(number: Nat): doubleValue(Nat.Succ(number)) === Nat.Succ(Nat.Succ(doubleValue(number))) = by {
+  unfold(doubleValue)
+  simp
+}
+
+// Automated proof search with `auto`
+theorem logicExample(alpha: Prop, beta: Prop, gamma: Prop):
+  (alpha => beta) => (beta => gamma) => alpha => gamma = by {
+  auto
+}
+
+#eval doubleValue(3)
+#axioms doubleSucc

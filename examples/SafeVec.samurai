@@ -1,0 +1,19 @@
+// SafeVec.samurai — Length-indexed dependent vectors with total head (no Option/null needed!)
+import Prelude.*
+import Nat.*
+import Vec.*
+
+def sampleVector: Vec[Nat](3) = {
+  Vec.Cons[Nat](2, 10, Vec.Cons[Nat](1, 20, Vec.Cons[Nat](0, 30, Vec.Nil[Nat])))
+}
+
+def firstElement: Nat = {
+  vecHead[Nat](2, sampleVector)
+}
+
+theorem firstElementIsTen: firstElement === 10 = by {
+  refl
+}
+
+#eval firstElement
+#axioms firstElementIsTen

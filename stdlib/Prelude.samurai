@@ -1,0 +1,209 @@
+module Prelude {
+
+  enum Unit: Type {
+    case Mk
+  }
+
+  enum False: Prop {
+  }
+
+  enum True: Prop {
+    case Intro
+  }
+
+  enum Bool: Type {
+    case True
+    case False
+  }
+
+  def notBool(value: Bool): Bool = {
+    value match {
+      case Bool.True => Bool.False
+      case Bool.False => Bool.True
+    }
+  }
+
+  def andBool(left: Bool, right: Bool): Bool = {
+    left match {
+      case Bool.True => right
+      case Bool.False => Bool.False
+    }
+  }
+
+  def orBool(left: Bool, right: Bool): Bool = {
+    left match {
+      case Bool.True => Bool.True
+      case Bool.False => right
+    }
+  }
+
+  // Paulin-Mohring propositional equality (subsingleton Prop -> allows Type transport!)
+  enum Eq[A: Type, left: A](right: A): Prop {
+    case Refl: Eq[A, left](left)
+  }
+
+  def Not(proposition: Prop): Prop = {
+    proposition => False
+  }
+
+  enum And[Left: Prop, Right: Prop]: Prop {
+    case Intro(leftProof: Left, rightProof: Right)
+  }
+
+  enum Or[Left: Prop, Right: Prop]: Prop {
+    case Inl(leftProof: Left)
+    case Inr(rightProof: Right)
+  }
+
+  enum Iff[Left: Prop, Right: Prop]: Prop {
+    case Intro(forward: Left => Right, backward: Right => Left)
+  }
+
+  enum Exists[Domain: Type, Predicate: Domain => Prop]: Prop {
+    case Intro(witness: Domain, proof: Predicate(witness))
+  }
+
+  // Computational dependent pair (keeps computational witness, erases Prop proof at extraction!)
+  enum Subset[Domain: Type, Predicate: Domain => Prop]: Type {
+    case Mk(value: Domain, proof: Predicate(value))
+  }
+
+  case class Pair[First, Second](first: First, second: Second)
+
+  enum Option[Element]: Type {
+    case None
+    case Some(value: Element)
+  }
+
+  enum Either[LeftValue, RightValue]: Type {
+    case Left(value: LeftValue)
+    case Right(value: RightValue)
+  }
+
+  def absurd[Result](contradictionProof: False): Result = {
+    contradictionProof match {
+    }
+  }
+
+  theorem eqSym[Element](left: Element, right: Element, equality: left === right): right === left = by {
+    symmetry
+    exact(equality)
+  }
+
+  theorem eqTrans[Element](
+    first: Element,
+    second: Element,
+    third: Element,
+    firstEqSecond: first === second,
+    secondEqThird: second === third
+  ): first === third = by {
+    trans(second)
+    exact(firstEqSecond)
+    exact(secondEqThird)
+  }
+
+  theorem congrArg[Input, Output](
+    function: Input => Output,
+    left: Input,
+    right: Input,
+    equality: left === right
+  ): function(left) === function(right) = by {
+    rewrite(equality)
+    refl
+  }
+
+  // Boolean algebra theorems
+  @simp
+  theorem notNotBool(value: Bool): notBool(notBool(value)) === value = by {
+    cases(value) {
+      case True => { refl }
+      case False => { refl }
+    }
+  }
+
+  @simp
+  theorem andBoolTrueRight(value: Bool): andBool(value, true) === value = by {
+    cases(value) {
+      case True => { refl }
+      case False => { refl }
+    }
+  }
+
+  @simp
+  theorem andBoolFalseRight(value: Bool): andBool(value, false) === false = by {
+    cases(value) {
+      case True => { refl }
+      case False => { refl }
+    }
+  }
+
+  theorem andBoolComm(left: Bool, right: Bool): andBool(left, right) === andBool(right, left) = by {
+    cases(left) {
+      case True => {
+        cases(right) {
+          case True => { refl }
+          case False => { refl }
+        }
+      }
+      case False => {
+        cases(right) {
+          case True => { refl }
+          case False => { refl }
+        }
+      }
+    }
+  }
+
+  theorem andBoolEqTrueLeft(left: Bool, right: Bool, bothTrue: andBool(left, right) === true): left === true = by {
+    revert(bothTrue)
+    cases(left) {
+      case True => {
+        intro(_)
+        refl
+      }
+      case False => {
+        intro(contradictionEq)
+        discriminate(contradictionEq)
+      }
+    }
+  }
+
+  theorem andBoolEqTrueRight(left: Bool, right: Bool, bothTrue: andBool(left, right) === true): right === true = by {
+    revert(bothTrue)
+    cases(left) {
+      case True => {
+        intro(rightIsTrue)
+        exact(rightIsTrue)
+      }
+      case False => {
+        intro(contradictionEq)
+        discriminate(contradictionEq)
+      }
+    }
+  }
+
+  // Intuitionistic logic theorems verified automatically via `auto`
+  theorem andComm(left: Prop, right: Prop): (left /\ right) => (right /\ left) = by {
+    auto
+  }
+
+  theorem orComm(left: Prop, right: Prop): (left \/ right) => (right \/ left) = by {
+    auto
+  }
+
+  theorem modusPonens(premise: Prop, conclusion: Prop): premise => (premise => conclusion) => conclusion = by {
+    auto
+  }
+
+  theorem contrapositive(premise: Prop, conclusion: Prop): (premise => conclusion) => (~conclusion => ~premise) = by {
+    auto
+  }
+
+  theorem doubleNegIntro(proposition: Prop): proposition => ~(~proposition) = by {
+    auto
+  }
+
+  theorem trueIsNotFalse: true !== false = by {
+    decide
+  }
+}

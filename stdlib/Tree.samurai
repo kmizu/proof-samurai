@@ -1,0 +1,86 @@
+module Tree {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  enum Tree[Element]: Type {
+    case Leaf
+    case Node(left: Tree[Element], value: Element, right: Tree[Element])
+  }
+
+  def treeSize[Element](tree: Tree[Element]): Nat = {
+    tree match {
+      case Tree.Leaf => Nat.Zero
+      case Tree.Node(left, _, right) => Nat.Succ(treeSize(left) + treeSize(right))
+    }
+  }
+
+  def mirror[Element](tree: Tree[Element]): Tree[Element] = {
+    tree match {
+      case Tree.Leaf => Tree.Leaf[Element]
+      case Tree.Node(left, value, right) => Tree.Node(mirror(right), value, mirror(left))
+    }
+  }
+
+  def flatten[Element](tree: Tree[Element]): List[Element] = {
+    tree match {
+      case Tree.Leaf => List.Nil[Element]
+      case Tree.Node(left, value, right) =>
+        append(flatten(left), List.Cons(value, flatten(right)))
+    }
+  }
+
+  @simp
+  theorem mirrorMirror[Element](tree: Tree[Element]): mirror(mirror(tree)) === tree = by {
+    induction(tree) {
+      case Leaf => { refl }
+      case Node(left, value, right, ihLeft, ihRight) => {
+        simp
+        rewrite(ihLeft)
+        rewrite(ihRight)
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem sizeMirror[Element](tree: Tree[Element]): treeSize(mirror(tree)) === treeSize(tree) = by {
+    induction(tree) {
+      case Leaf => { refl }
+      case Node(left, value, right, ihLeft, ihRight) => {
+        simp
+        rewrite(ihLeft)
+        rewrite(ihRight)
+        rewrite(addComm(treeSize(right), treeSize(left)))
+        refl
+      }
+    }
+  }
+
+  theorem lengthFlatten[Element](tree: Tree[Element]): length(flatten(tree)) === treeSize(tree) = by {
+    induction(tree) {
+      case Leaf => { refl }
+      case Node(left, value, right, ihLeft, ihRight) => {
+        simp
+        rewrite(ihLeft)
+        rewrite(ihRight)
+        refl
+      }
+    }
+  }
+
+  theorem flattenMirror[Element](tree: Tree[Element]): flatten(mirror(tree)) === reverse(flatten(tree)) = by {
+    induction(tree) {
+      case Leaf => { refl }
+      case Node(left, value, right, ihLeft, ihRight) => {
+        simp
+        rewrite(reverseAppend(flatten(left), List.Cons(value, flatten(right))))
+        simp
+        rewrite(ihLeft)
+        rewrite(ihRight)
+        rewrite(appendAssoc(reverse(flatten(right)), List.Cons(value, List.Nil[Element]), reverse(flatten(left))))
+        refl
+      }
+    }
+  }
+}

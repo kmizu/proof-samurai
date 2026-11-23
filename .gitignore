@@ -1,0 +1,18 @@
+# sbt / Scala build artifacts
+target/
+project/target/
+project/project/
+*.class
+*.tasty
+*.jar
+*.log
+
+# IDE / Metals / Bloop
+.bsp/
+.bloop/
+.metals/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

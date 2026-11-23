@@ -1,0 +1,309 @@
+module Nat {
+  import Prelude.*
+
+  enum Nat: Type {
+    case Zero
+    case Succ(pred: Nat)
+  }
+
+  def add(left: Nat, right: Nat): Nat = {
+    left match {
+      case Nat.Zero => right
+      case Nat.Succ(predLeft) => Nat.Succ(add(predLeft, right))
+    }
+  }
+
+  def mul(left: Nat, right: Nat): Nat = {
+    left match {
+      case Nat.Zero => Nat.Zero
+      case Nat.Succ(predLeft) => add(right, mul(predLeft, right))
+    }
+  }
+
+  def sub(left: Nat, right: Nat): Nat = {
+    left match {
+      case Nat.Zero => Nat.Zero
+      case Nat.Succ(predLeft) =>
+        right match {
+          case Nat.Zero => left
+          case Nat.Succ(predRight) => sub(predLeft, predRight)
+        }
+    }
+  }
+
+  def beq(left: Nat, right: Nat): Bool = {
+    left match {
+      case Nat.Zero =>
+        right match {
+          case Nat.Zero => Bool.True
+          case Nat.Succ(_) => Bool.False
+        }
+      case Nat.Succ(predLeft) =>
+        right match {
+          case Nat.Zero => Bool.False
+          case Nat.Succ(predRight) => beq(predLeft, predRight)
+        }
+    }
+  }
+
+  def ble(left: Nat, right: Nat): Bool = {
+    left match {
+      case Nat.Zero => Bool.True
+      case Nat.Succ(predLeft) =>
+        right match {
+          case Nat.Zero => Bool.False
+          case Nat.Succ(predRight) => ble(predLeft, predRight)
+        }
+    }
+  }
+
+  def blt(left: Nat, right: Nat): Bool = {
+    ble(Nat.Succ(left), right)
+  }
+
+  // Inductive less-than-or-equal proposition (erased at code extraction!)
+  enum Le(lower: Nat, upper: Nat): Prop {
+    case Refl(value: Nat): Le(value, value)
+    case Step(lower: Nat, upper: Nat, prev: Le(lower, upper)): Le(lower, Nat.Succ(upper))
+  }
+
+  // =========================================================================
+  // Addition Theorems (100% Axiom-Free, Kernel-Verified!)
+  // =========================================================================
+
+  @simp
+  theorem addZeroLeft(value: Nat): 0 + value === value = by {
+    refl
+  }
+
+  @simp
+  theorem addZeroRight(value: Nat): value + 0 === value = by {
+    induction(value) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem addSuccRight(left: Nat, right: Nat): left + Nat.Succ(right) === Nat.Succ(left + right) = by {
+    induction(left) {
+      case Zero => { refl }
+      case Succ(predLeft, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem addComm(left: Nat, right: Nat): left + right === right + left = by {
+    induction(left) {
+      case Zero => {
+        simp
+      }
+      case Succ(predLeft, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem addAssoc(first: Nat, second: Nat, third: Nat): (first + second) + third === first + (second + third) = by {
+    induction(first) {
+      case Zero => { refl }
+      case Succ(predFirst, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  // =========================================================================
+  // Multiplication Theorems (100% Axiom-Free, Kernel-Verified!)
+  // =========================================================================
+
+  @simp
+  theorem mulZeroLeft(value: Nat): 0 * value === 0 = by {
+    refl
+  }
+
+  @simp
+  theorem mulZeroRight(value: Nat): value * 0 === 0 = by {
+    induction(value) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        exact(ih)
+      }
+    }
+  }
+
+  @simp
+  theorem mulOneLeft(value: Nat): 1 * value === value = by {
+    simp
+  }
+
+  @simp
+  theorem mulOneRight(value: Nat): value * 1 === value = by {
+    induction(value) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem mulSuccRight(left: Nat, right: Nat): left * Nat.Succ(right) === left + (left * right) = by {
+    induction(left) {
+      case Zero => { refl }
+      case Succ(predLeft, ih) => {
+        simp
+        rewrite(ih)
+        rewriteRev(addAssoc(right, predLeft, predLeft * right))
+        rewrite(addComm(right, predLeft))
+        rewrite(addAssoc(predLeft, right, predLeft * right))
+        refl
+      }
+    }
+  }
+
+  theorem mulComm(left: Nat, right: Nat): left * right === right * left = by {
+    induction(left) {
+      case Zero => {
+        simp
+      }
+      case Succ(predLeft, ih) => {
+        simp
+        rewrite(ih)
+        rewriteRev(mulSuccRight(right, predLeft))
+        refl
+      }
+    }
+  }
+
+  theorem mulDistribRight(first: Nat, second: Nat, factor: Nat): (first + second) * factor === (first * factor) + (second * factor) = by {
+    induction(first) {
+      case Zero => { refl }
+      case Succ(predFirst, ih) => {
+        simp
+        rewrite(ih)
+        rewriteRev(addAssoc(factor, predFirst * factor, second * factor))
+        refl
+      }
+    }
+  }
+
+  theorem mulAssoc(first: Nat, second: Nat, third: Nat): (first * second) * third === first * (second * third) = by {
+    induction(first) {
+      case Zero => { refl }
+      case Succ(predFirst, ih) => {
+        simp
+        rewrite(mulDistribRight(second, predFirst * second, third))
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  // =========================================================================
+  // Equality, Injectivity, Discrimination, and Ordering Theorems
+  // =========================================================================
+
+  @simp
+  theorem beqRefl(value: Nat): beq(value, value) === true = by {
+    induction(value) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        exact(ih)
+      }
+    }
+  }
+
+  @simp
+  theorem bleRefl(value: Nat): ble(value, value) === true = by {
+    induction(value) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        exact(ih)
+      }
+    }
+  }
+
+  theorem zeroNotSucc(value: Nat): Nat.Zero !== Nat.Succ(value) = by {
+    intro(eqProof)
+    discriminate(eqProof)
+  }
+
+  theorem succInjective(left: Nat, right: Nat, eqProof: Nat.Succ(left) === Nat.Succ(right)): left === right = by {
+    injection(eqProof, innerEq)
+    exact(innerEq)
+  }
+
+  theorem bleTotal(left: Nat): forall (right: Nat) => (ble(left, right) === true) \/ (ble(right, left) === true) = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        left
+        refl
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            right
+            refl
+          }
+          case Succ(predRight) => {
+            simp
+            exact(ih(predRight))
+          }
+        }
+      }
+    }
+  }
+
+  theorem bleFalseToTrue(left: Nat): forall (right: Nat) => (ble(left, right) === false) => (ble(right, left) === true) = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        intro(eqFalse)
+        discriminate(eqFalse)
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(_)
+            refl
+          }
+          case Succ(predRight) => {
+            intro(eqFalse)
+            simp
+            exact(ih(predRight, eqFalse))
+          }
+        }
+      }
+    }
+  }
+
+  theorem zeroLe(upper: Nat): Le(0, upper) = by {
+    induction(upper) {
+      case Zero => {
+        exact(Le.Refl(0))
+      }
+      case Succ(predUpper, ih) => {
+        exact(Le.Step(0, predUpper, ih))
+      }
+    }
+  }
+}

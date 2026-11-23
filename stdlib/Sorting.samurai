@@ -1,0 +1,254 @@
+module Sorting {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  // Insert an element into a sorted list of natural numbers
+  def insert(element: Nat, sortedItems: List[Nat]): List[Nat] = {
+    sortedItems match {
+      case List.Nil => List.Cons(element, List.Nil[Nat])
+      case List.Cons(head, tail) =>
+        if (ble(element, head)) {
+          List.Cons(element, List.Cons(head, tail))
+        } else {
+          List.Cons(head, insert(element, tail))
+        }
+    }
+  }
+
+  // Insertion sort on List[Nat]
+  def insertionSort(items: List[Nat]): List[Nat] = {
+    items match {
+      case List.Nil => List.Nil[Nat]
+      case List.Cons(head, tail) => insert(head, insertionSort(tail))
+    }
+  }
+
+  // Executable sortedness predicate
+  def isSortedBool(items: List[Nat]): Bool = {
+    items match {
+      case List.Nil => Bool.True
+      case List.Cons(head, tail) =>
+        tail match {
+          case List.Nil => Bool.True
+          case List.Cons(nextHead, _) =>
+            andBool(ble(head, nextHead), isSortedBool(tail))
+        }
+    }
+  }
+
+  // Propositional sortedness specification (lives in Prop -> erased at extraction!)
+  def Sorted(items: List[Nat]): Prop = {
+    isSortedBool(items) === Bool.True
+  }
+
+  // Count occurrences of a value in a list (for permutation / multiset correctness!)
+  def count(target: Nat, items: List[Nat]): Nat = {
+    items match {
+      case List.Nil => Nat.Zero
+      case List.Cons(head, tail) =>
+        if (beq(target, head)) {
+          Nat.Succ(count(target, tail))
+        } else {
+          count(target, tail)
+        }
+    }
+  }
+
+  // =========================================================================
+  // 1. Length Preservation (100% Axiom-Free!)
+  // =========================================================================
+
+  @simp
+  theorem lengthInsert(element: Nat, items: List[Nat]): length(insert(element, items)) === Nat.Succ(length(items)) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        cases(ble(element, head)) {
+          case True => { refl }
+          case False => {
+            simp
+            rewrite(ih)
+            refl
+          }
+        }
+      }
+    }
+  }
+
+  @simp
+  theorem lengthInsertionSort(items: List[Nat]): length(insertionSort(items)) === length(items) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  // =========================================================================
+  // 2. Permutation / Multiset Preservation (100% Axiom-Free!)
+  // =========================================================================
+
+  @simp
+  theorem countInsert(target: Nat, element: Nat, items: List[Nat]):
+    count(target, insert(element, items)) === count(target, List.Cons(element, items)) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        cases(ble(element, head)) {
+          case True => { refl }
+          case False => {
+            simp
+            rewrite(ih)
+            simp
+            cases(beq(target, head)) {
+              case True => {
+                cases(beq(target, element)) {
+                  case True => { refl }
+                  case False => { refl }
+                }
+              }
+              case False => {
+                cases(beq(target, element)) {
+                  case True => { refl }
+                  case False => { refl }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  theorem countInsertionSort(target: Nat, items: List[Nat]):
+    count(target, insertionSort(items)) === count(target, items) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        cases(beq(target, head)) {
+          case True => {
+            simp
+            rewrite(ih)
+            refl
+          }
+          case False => {
+            simp
+            exact(ih)
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. Sortedness Preservation & Full Correctness (100% Axiom-Free!)
+  // =========================================================================
+
+  theorem insertPreservesSorted(element: Nat, items: List[Nat]):
+    Sorted(items) => Sorted(insert(element, items)) = by {
+    induction(items) {
+      case Nil => {
+        intro(_)
+        refl
+      }
+      case Cons(head, tail, ih) => {
+        intro(sortedHyp)
+        unfold(Sorted)
+        simp
+        cases(ble(element, head), cmpHead) {
+          case True => {
+            simp
+            rewrite(cmpHead)
+            exact(sortedHyp)
+          }
+          case False => {
+            have(headLeElem: ble(head, element) === true) {
+              exact(bleFalseToTrue(element, head, cmpHead))
+            }
+            revert(ih)
+            cases(tail) {
+              case Nil => {
+                intros(ih, sortedHyp, cmpHead, headLeElem)
+                simp
+                rewrite(headLeElem)
+                refl
+              }
+              case Cons(nextHead, rest) => {
+                intros(ih, sortedHyp, cmpHead, headLeElem)
+                have(headLeNext: ble(head, nextHead) === true) {
+                  exact(andBoolEqTrueLeft(ble(head, nextHead), isSortedBool(List.Cons(nextHead, rest)), sortedHyp))
+                }
+                have(tailSorted: Sorted(List.Cons(nextHead, rest))) {
+                  exact(andBoolEqTrueRight(ble(head, nextHead), isSortedBool(List.Cons(nextHead, rest)), sortedHyp))
+                }
+                have(insTailSorted: isSortedBool(insert(element, List.Cons(nextHead, rest))) === true) {
+                  exact(ih(tailSorted))
+                }
+                simp
+                revert(insTailSorted)
+                cases(ble(element, nextHead), cmpNext) {
+                  case True => {
+                    intro(_)
+                    simp
+                    rewrite(headLeElem)
+                    simp
+                    rewrite(cmpNext)
+                    exact(tailSorted)
+                  }
+                  case False => {
+                    intro(insTailSorted)
+                    simp
+                    rewrite(headLeNext)
+                    exact(insTailSorted)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  theorem insertionSortIsSorted(items: List[Nat]): Sorted(insertionSort(items)) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        exact(insertPreservesSorted(head, insertionSort(tail), ih))
+      }
+    }
+  }
+
+  // =========================================================================
+  // 4. Fully Certified Sorting Wrapper (Proofs Completely Erased at Extraction!)
+  // =========================================================================
+
+  def IsSortedPermutation(input: List[Nat], output: List[Nat]): Prop = {
+    Sorted(output) /\ (forall (target: Nat) => count(target, output) === count(target, input))
+  }
+
+  def sortVerified(items: List[Nat]): Subset[List[Nat], (output: List[Nat]) => IsSortedPermutation(items, output)] = {
+    Subset.Mk[List[Nat], (output: List[Nat]) => IsSortedPermutation(items, output)](
+      insertionSort(items),
+      And.Intro[Sorted(insertionSort(items)), forall (target: Nat) => count(target, insertionSort(items)) === count(target, items)](
+        insertionSortIsSorted(items),
+        (target: Nat) => countInsertionSort(target, items)
+      )
+    )
+  }
+
+  def sortWithLengthProof(items: List[Nat]): Subset[List[Nat], (sorted: List[Nat]) => length(sorted) === length(items)] = {
+    Subset.Mk[List[Nat], (sorted: List[Nat]) => length(sorted) === length(items)](
+      insertionSort(items),
+      lengthInsertionSort(items)
+    )
+  }
+}

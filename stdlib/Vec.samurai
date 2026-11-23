@@ -1,0 +1,42 @@
+module Vec {
+  import Prelude.*
+  import Nat.*
+
+  // Length-indexed dependent vector
+  enum Vec[Element](size: Nat): Type {
+    case Nil: Vec[Element](Nat.Zero)
+    case Cons(tailSize: Nat, head: Element, tail: Vec[Element](tailSize)): Vec[Element](Nat.Succ(tailSize))
+  }
+
+  // Total safe head: impossible Nil case is automatically discharged by the kernel!
+  def vecHead[Element](tailSize: Nat, nonEmpty: Vec[Element](Nat.Succ(tailSize))): Element = {
+    nonEmpty match {
+      case Vec.Cons(_, head, _) => head
+    }
+  }
+
+  def vecMap[Input, Output](
+    size: Nat,
+    transform: Input => Output,
+    items: Vec[Input](size)
+  ): Vec[Output](size) = {
+    items match {
+      case Vec.Nil => Vec.Nil[Output]
+      case Vec.Cons(tailSize, head, tail) =>
+        Vec.Cons[Output](tailSize, transform(head), vecMap(tailSize, transform, tail))
+    }
+  }
+
+  def vecAppend[Element](
+    leftSize: Nat,
+    rightSize: Nat,
+    left: Vec[Element](leftSize),
+    right: Vec[Element](rightSize)
+  ): Vec[Element](add(leftSize, rightSize)) = {
+    left match {
+      case Vec.Nil => right
+      case Vec.Cons(tailSize, head, tail) =>
+        Vec.Cons[Element](add(tailSize, rightSize), head, vecAppend(tailSize, rightSize, tail, right))
+    }
+  }
+}

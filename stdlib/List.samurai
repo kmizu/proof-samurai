@@ -1,0 +1,188 @@
+module List {
+  import Prelude.*
+  import Nat.*
+
+  enum List[Element]: Type {
+    case Nil
+    case Cons(head: Element, tail: List[Element])
+  }
+
+  def length[Element](items: List[Element]): Nat = {
+    items match {
+      case List.Nil => Nat.Zero
+      case List.Cons(_, tail) => Nat.Succ(length(tail))
+    }
+  }
+
+  def append[Element](left: List[Element], right: List[Element]): List[Element] = {
+    left match {
+      case List.Nil => right
+      case List.Cons(head, tail) => List.Cons(head, append(tail, right))
+    }
+  }
+
+  def reverse[Element](items: List[Element]): List[Element] = {
+    items match {
+      case List.Nil => List.Nil[Element]
+      case List.Cons(head, tail) => append(reverse(tail), List.Cons(head, List.Nil[Element]))
+    }
+  }
+
+  def map[Input, Output](transform: Input => Output, items: List[Input]): List[Output] = {
+    items match {
+      case List.Nil => List.Nil[Output]
+      case List.Cons(head, tail) => List.Cons(transform(head), map(transform, tail))
+    }
+  }
+
+  def filter[Element](predicate: Element => Bool, items: List[Element]): List[Element] = {
+    items match {
+      case List.Nil => List.Nil[Element]
+      case List.Cons(head, tail) =>
+        if (predicate(head)) {
+          List.Cons(head, filter(predicate, tail))
+        } else {
+          filter(predicate, tail)
+        }
+    }
+  }
+
+  // =========================================================================
+  // List Algebra Theorems (100% Axiom-Free, Kernel-Verified!)
+  // =========================================================================
+
+  @simp
+  theorem appendNilLeft[Element](items: List[Element]): append(List.Nil[Element], items) === items = by {
+    refl
+  }
+
+  @simp
+  theorem appendNilRight[Element](items: List[Element]): append(items, List.Nil[Element]) === items = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem appendAssoc[Element](
+    first: List[Element],
+    second: List[Element],
+    third: List[Element]
+  ): append(append(first, second), third) === append(first, append(second, third)) = by {
+    induction(first) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem lengthAppend[Element](
+    left: List[Element],
+    right: List[Element]
+  ): length(append(left, right)) === length(left) + length(right) = by {
+    induction(left) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem lengthMap[Input, Output](
+    transform: Input => Output,
+    items: List[Input]
+  ): length(map(transform, items)) === length(items) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem lengthReverse[Element](items: List[Element]): length(reverse(items)) === length(items) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem reverseAppend[Element](
+    left: List[Element],
+    right: List[Element]
+  ): reverse(append(left, right)) === append(reverse(right), reverse(left)) = by {
+    induction(left) {
+      case Nil => {
+        simp
+      }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        rewrite(appendAssoc(reverse(right), reverse(tail), List.Cons(head, List.Nil[Element])))
+        refl
+      }
+    }
+  }
+
+  @simp
+  theorem reverseReverse[Element](items: List[Element]): reverse(reverse(items)) === items = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(reverseAppend(reverse(tail), List.Cons(head, List.Nil[Element])))
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem mapAppend[Input, Output](
+    transform: Input => Output,
+    left: List[Input],
+    right: List[Input]
+  ): map(transform, append(left, right)) === append(map(transform, left), map(transform, right)) = by {
+    induction(left) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  theorem mapFusion[First, Second, Third](
+    outerFn: Second => Third,
+    innerFn: First => Second,
+    items: List[First]
+  ): map(outerFn, map(innerFn, items)) === map((elem: First) => outerFn(innerFn(elem)), items) = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+}
