@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Proof Samurai Studio — Interactive Theorem Prover IDE</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="crest" aria-hidden="true">⚔</div>
+      <div>
+        <div class="brand-title">Proof Samurai Studio</div>
+        <div class="brand-sub">Sound Scala 3 Brace Proof Assistant · Humans &amp; AI</div>
+      </div>
+    </div>
+
+    <nav class="mode-tabs" role="tablist" aria-label="Workspace modes">
+      <button class="mode-tab active" data-mode="editor" role="tab" aria-selected="true">Editor &amp; Infoview</button>
+      <button class="mode-tab" data-mode="prover" role="tab" aria-selected="false">Interactive Proof Tree</button>
+      <button class="mode-tab" data-mode="docs" role="tab" aria-selected="false">Learn &amp; Docs</button>
+    </nav>
+
+    <div class="topbar-actions">
+      <select id="example-select" class="select-control" aria-label="Load example or stdlib module">
+        <option value="">Loading examples…</option>
+      </select>
+      <button id="btn-verify" class="btn btn-primary" title="Verify file (Ctrl+Enter)">▶ Verify</button>
+      <span id="trust-badge" class="badge badge-neutral" title="Kernel trust status">Ready</span>
+      <button id="btn-theme" class="btn btn-ghost" title="Toggle light/dark theme" aria-label="Toggle theme">◐</button>
+    </div>
+  </header>
+
+  <!-- MODE 1: EDITOR & INFOVIEW -->
+  <main id="view-editor" class="workspace active">
+    <section class="pane editor-pane">
+      <div class="pane-header">
+        <div class="pane-title">
+          <span id="current-filename">Showcase.samurai</span>
+          <span id="cursor-pos" class="muted">Ln 1, Col 1</span>
+        </div>
+        <div class="snippet-bar">
+          <span class="muted">Insert:</span>
+          <button class="chip" data-snippet="theorem">theorem</button>
+          <button class="chip" data-snippet="calc">calc</button>
+          <button class="chip" data-snippet="induction">induction</button>
+          <button class="chip" data-snippet="enum">enum</button>
+          <button class="chip" data-snippet="hole">?hole</button>
+        </div>
+      </div>
+      <div class="editor-shell">
+        <div id="line-numbers" class="line-numbers" aria-hidden="true">1</div>
+        <div class="editor-stack">
+          <pre id="highlight-layer" class="highlight-layer" aria-hidden="true"><code id="highlight-code"></code></pre>
+          <textarea
+            id="code-editor"
+            class="code-editor"
+            spellcheck="false"
+            autocapitalize="off"
+            autocomplete="off"
+            autocorrect="off"
+            aria-label="Proof Samurai source code editor"
+          ></textarea>
+        </div>
+      </div>
+      <div class="editor-footer">
+        <span id="status-line">Press <strong>Ctrl+Enter</strong> to verify with the Trusted Kernel.</span>
+        <span id="stats-line" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="pane infoview-pane">
+      <div class="pane-header">
+        <div class="sub-tabs" role="tablist">
+          <button class="sub-tab active" data-panel="infoview">Infoview</button>
+          <button class="sub-tab" data-panel="extract">Code Extraction</button>
+          <button class="sub-tab" data-panel="symbols">Symbols</button>
+        </div>
+      </div>
+
+      <!-- Infoview Panel -->
+      <div id="panel-infoview" class="panel-body active">
+        <div id="verify-banner" class="card banner banner-neutral">
+          Click <strong>▶ Verify</strong> or press <code>Ctrl+Enter</code> to check proofs and evaluate <code>#eval</code> expressions.
+        </div>
+        <div id="directives-section" class="section hidden">
+          <h3>Outputs (#eval / #axioms / #check)</h3>
+          <div id="directives-list" class="stack"></div>
+        </div>
+        <div id="holes-section" class="section hidden">
+          <h3>Open Proof Holes (?hole)</h3>
+          <div id="holes-list" class="stack"></div>
+        </div>
+        <div id="errors-section" class="section hidden">
+          <h3>Kernel &amp; Type Diagnostics</h3>
+          <div id="errors-list" class="stack"></div>
+        </div>
+      </div>
+
+      <!-- Extraction Panel -->
+      <div id="panel-extract" class="panel-body">
+        <div class="extract-toolbar">
+          <div class="btn-group">
+            <button class="btn btn-sm target-btn active" data-target="scala3">Scala 3</button>
+            <button class="btn btn-sm target-btn" data-target="ts">TypeScript</button>
+            <button class="btn btn-sm target-btn" data-target="js">JavaScript</button>
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="extract-strict" checked />
+            Strict (0 axioms)
+          </label>
+          <div class="btn-group">
+            <button id="btn-run-extract" class="btn btn-primary btn-sm">⚡ Extract</button>
+            <button id="btn-copy-extract" class="btn btn-ghost btn-sm">Copy</button>
+            <button id="btn-download-extract" class="btn btn-ghost btn-sm">Download</button>
+          </div>
+        </div>
+        <div id="extract-manifest" class="manifest-grid"></div>
+        <pre class="code-output"><code id="extract-code">// Click "Extract" to generate proof-erased Scala 3, TypeScript, or JavaScript code.</code></pre>
+      </div>
+
+      <!-- Symbols Panel -->
+      <div id="panel-symbols" class="panel-body">
+        <input id="symbol-filter" class="text-input" type="search" placeholder="Filter enums, functions, theorems, @simp lemmas…" />
+        <div id="symbols-list" class="stack" style="margin-top: 12px;"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODE 2: INTERACTIVE PROOF TREE & TACTIC PLAYGROUND -->
+  <main id="view-prover" class="workspace">
+    <section class="pane prover-left">
+      <div class="pane-header">
+        <div class="pane-title">Interactive Proof Session (Branch &amp; Backtrack)</div>
+      </div>
+      <div class="panel-body active">
+        <div class="field-group">
+          <label for="prover-preset">Preset Theorem</label>
+          <select id="prover-preset" class="select-control full-width">
+            <option value="forall (a: Nat, b: Nat) => a + b === b + a">Addition Commutativity: a + b === b + a</option>
+            <option value="forall (a: Nat, b: Nat, c: Nat) => (a + b) * (c + 1) === (a * c + b * c) + (b + a)">Binomial Expansion: (a + b) * (c + 1) === ...</option>
+            <option value="forall (first: Prop, second: Prop) => (first /\ second) => (second /\ first)">Conjunction Commutativity: (P /\ Q) =&gt; (Q /\ P)</option>
+            <option value="forall (first: Prop, second: Prop) => second => (first \/ second)">Disjunction Right (Try Branching &amp; Backtracking!)</option>
+            <option value="forall (xs: List[Nat]) => append(xs, []) === xs">List Right Identity: xs ++ [] === xs</option>
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="prover-statement">Theorem Statement</label>
+          <input id="prover-statement" class="text-input mono" type="text" value="forall (a: Nat, b: Nat) => a + b === b + a" />
+        </div>
+        <div class="btn-row">
+          <button id="btn-start-proof" class="btn btn-primary">⚔ Start Proof</button>
+          <button id="btn-auto-solve" class="btn btn-ghost">✨ Auto Solve</button>
+          <button id="btn-copy-trace" class="btn btn-ghost">📋 Copy by { ... } Script</button>
+        </div>
+
+        <div id="prover-feedback" class="card banner banner-neutral" style="margin-top: 14px;">
+          Start a proof to step through tactics interactively. Click any node in the Proof Tree to backtrack!
+        </div>
+
+        <div id="prover-goal-box" class="section hidden">
+          <h3>Current Goal</h3>
+          <div id="prover-goal-card" class="goal-card"></div>
+        </div>
+
+        <div id="prover-tactic-box" class="section hidden">
+          <h3>Apply Tactic</h3>
+          <div class="tactic-input-row">
+            <input id="prover-tactic-input" class="text-input mono" type="text" placeholder="e.g. intros(a, b) or induction(a) or simp or arith" />
+            <button id="btn-apply-tactic" class="btn btn-primary">Step →</button>
+          </div>
+          <div class="muted" style="margin: 10px 0 6px;">AI-Ranked Suggestions (1-click apply):</div>
+          <div id="prover-suggestions" class="suggestion-pills"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pane prover-right">
+      <div class="pane-header">
+        <div class="pane-title">Proof Exploration Tree</div>
+        <span class="muted">Click any state node to branch or backtrack</span>
+      </div>
+      <div class="panel-body active">
+        <div id="proof-tree" class="proof-tree"></div>
+        <div id="trace-box" class="section hidden">
+          <h3>Generated Proof Samurai Script</h3>
+          <pre class="code-output"><code id="trace-code"></code></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MODE 3: KINDFUL LEARN & DOCS HUB -->
+  <main id="view-docs" class="workspace">
+    <aside class="pane docs-sidebar">
+      <div class="pane-header">
+        <div class="pane-title">Kindful Guides</div>
+      </div>
+      <div id="docs-nav" class="docs-nav"></div>
+    </aside>
+    <article class="pane docs-content">
+      <div class="pane-header">
+        <div id="docs-title" class="pane-title">Documentation</div>
+      </div>
+      <div id="docs-body" class="panel-body active markdown-body"></div>
+    </article>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

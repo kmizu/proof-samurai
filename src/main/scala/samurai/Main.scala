@@ -6,6 +6,7 @@ import samurai.elab.{ElabEnv, Elaborator}
 import samurai.extract.{Erasure, JsEmitter, Scala3Emitter, TsEmitter}
 import samurai.kernel.Pretty
 import samurai.tactic.{ProofGoal, ProofSearch}
+import samurai.ui.StudioServer
 import samurai.util.Json
 
 /**
@@ -33,6 +34,7 @@ object Main {
       case "verify-project" => runVerifyProject(args.drop(1))
       case "extract"        => runExtract(args.drop(1))
       case "search"         => runSearch(args.drop(1))
+      case "studio" | "ui"  => runStudio(args.drop(1))
       case "serve"          => ProofSessionServer.runStdio(DefaultSearchPaths)
       case "repl"           => Repl.run(DefaultSearchPaths)
       case "--help" | "-h" | "help" => printUsage()
@@ -48,6 +50,7 @@ object Main {
       """Proof Samurai v0.1.0 — Pragmatic, Readable, AI-Friendly Dependently-Typed Proof Assistant
         |
         |Usage:
+        |  samurai studio [--port 8080]   Launch Proof Samurai Studio (Interactive Web IDE & Docs Hub)
         |  samurai check <file.samurai> [--strict] [--json]
         |  samurai goals <file.samurai> [--json]
         |  samurai verify-project [dir] [--strict] [--json]
@@ -57,6 +60,22 @@ object Main {
         |  samurai repl                   Start interactive multi-line human REPL
         |""".stripMargin
     )
+  }
+
+  private def runStudio(args: Array[String]): Unit = {
+    val port = {
+      val idx = args.indexOf("--port")
+      if (idx >= 0 && idx + 1 < args.length) args(idx + 1).toIntOption.getOrElse(8080)
+      else 8080
+    }
+    val server = StudioServer.start(port, DefaultSearchPaths)
+    println("==================================================================")
+    println(s"  Proof Samurai Studio is running at: ${server.url}")
+    println("  Features: Live Kernel Infoview | Interactive Proof Tree | Code Extractor | Kindful Docs")
+    println("  Press Ctrl+C to stop.")
+    println("==================================================================")
+    Runtime.getRuntime.addShutdownHook(new Thread(() => server.stop()))
+    Thread.currentThread().join()
   }
 
   private def runCheck(args: Array[String]): Unit = {
