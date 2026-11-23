@@ -47,6 +47,13 @@ enum TopDecl {
     returnType: Option[SurfaceExpr],
     body: SurfaceExpr,
     isTheorem: Boolean,
+    span: Span,
+    isPartial: Boolean = false,
+    terminationBy: Option[SurfaceExpr] = None,
+    decreasingBy: Option[List[TacticStmt]] = None
+  )
+  case MutualDecl(
+    declarations: List[DefDecl],
     span: Span
   )
   case ValDecl(

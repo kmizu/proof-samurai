@@ -133,9 +133,20 @@ object Parser {
         case TokenKind.KwCase =>
           parseCaseClassDecl(annotations)
         case TokenKind.KwDef =>
-          parseDefDecl(annotations, isTheorem = false)
+          parseDefDecl(annotations, isTheorem = false, isPartial = false)
+        case TokenKind.KwPartial =>
+          val partialTok = advance()
+          current.kind match {
+            case TokenKind.KwDef =>
+              parseDefDecl(annotations, isTheorem = false, isPartial = true, startOverride = Some(partialTok.span))
+            case _ =>
+              fail("P007", "Only 'def' declarations can be marked 'partial' (theorems and lemmas must be total)", partialTok.span)
+          }
+        case TokenKind.KwMutual =>
+          if (annotations.nonEmpty) fail("P004", "Annotations are not supported directly on 'mutual' blocks; place them on individual 'def's")
+          parseMutualDecl()
         case TokenKind.KwTheorem | TokenKind.KwLemma =>
-          parseDefDecl(annotations, isTheorem = true)
+          parseDefDecl(annotations, isTheorem = true, isPartial = false)
         case TokenKind.KwVal =>
           parseValDecl(annotations)
         case TokenKind.KwAxiom =>
@@ -247,8 +258,39 @@ object Parser {
       TopDecl.CaseClassDecl(annotations, className, typeParams, fields, sortAnn, start.span.merge(endSpan))
     }
 
-    private def parseDefDecl(annotations: List[SurfaceAnnotation], isTheorem: Boolean): TopDecl.DefDecl = {
+    private def parseMutualDecl(): TopDecl.MutualDecl = {
+      val start = expect(TokenKind.KwMutual, "'mutual'")
+      expect(TokenKind.LBrace, "'{' to open mutual block")
+      val defs = List.newBuilder[TopDecl.DefDecl]
+      skipSemis()
+      while (current.kind != TokenKind.RBrace && current.kind != TokenKind.Eof) {
+        val annotations = parseAnnotations()
+        current.kind match {
+          case TokenKind.KwDef =>
+            defs += parseDefDecl(annotations, isTheorem = false, isPartial = false)
+          case TokenKind.KwPartial =>
+            val partialTok = advance()
+            if (current.kind != TokenKind.KwDef) {
+              fail("P007", "Only 'def' declarations can be marked 'partial' inside 'mutual'", partialTok.span)
+            }
+            defs += parseDefDecl(annotations, isTheorem = false, isPartial = true, startOverride = Some(partialTok.span))
+          case other =>
+            fail("P008", s"Expected 'def' or 'partial def' inside 'mutual { ... }', found $other")
+        }
+        skipSemis()
+      }
+      val end = expect(TokenKind.RBrace, "'}' to close mutual block")
+      TopDecl.MutualDecl(defs.result(), start.span.merge(end.span))
+    }
+
+    private def parseDefDecl(
+      annotations: List[SurfaceAnnotation],
+      isTheorem: Boolean,
+      isPartial: Boolean,
+      startOverride: Option[Span] = None
+    ): TopDecl.DefDecl = {
       val start = advance() // def | theorem | lemma
+      val declStart = startOverride.getOrElse(start.span)
       val (defName, _) = expectIdent(if (isTheorem) "theorem name" else "function name")
       val typeParams = if (current.kind == TokenKind.LBracket) parseBracketBinders() else Nil
       val valueParams = parseRepeatedParenBinders()
@@ -259,7 +301,29 @@ object Parser {
         } else None
       expect(TokenKind.Eq, "'='")
       val body = expr()
-      TopDecl.DefDecl(
+      var endSpan = body.span
+
+      val terminationBy =
+        if (current.kind == TokenKind.KwTerminationBy) {
+          advance()
+          expect(TokenKind.LBrace, "'{' after 'termination_by'")
+          val measureExpr = expr()
+          val closeBrace = expect(TokenKind.RBrace, "'}' after termination_by measure")
+          endSpan = closeBrace.span
+          Some(measureExpr)
+        } else None
+
+      val decreasingBy =
+        if (current.kind == TokenKind.KwDecreasingBy) {
+          advance()
+          expect(TokenKind.LBrace, "'{' after 'decreasing_by'")
+          val tactics = parseTacticsUntil(TokenKind.RBrace)
+          val closeBrace = expect(TokenKind.RBrace, "'}' after decreasing_by tactics")
+          endSpan = closeBrace.span
+          Some(tactics)
+        } else None
+
+      new TopDecl.DefDecl(
         annotations = annotations,
         name = defName,
         typeParams = typeParams,
@@ -267,7 +331,10 @@ object Parser {
         returnType = returnType,
         body = body,
         isTheorem = isTheorem,
-        span = start.span.merge(body.span)
+        span = declStart.merge(endSpan),
+        isPartial = isPartial,
+        terminationBy = terminationBy,
+        decreasingBy = decreasingBy
       )
     }
 

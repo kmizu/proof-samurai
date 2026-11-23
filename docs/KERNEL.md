@@ -15,16 +15,20 @@ Proof Samurai follows the **de Bruijn criterion**: all surface elaboration, meta
 
 3. **Subsingleton `Prop` Elimination (`TypeChecker.scala`)**
    - `Prop` is impredicative for `Pi` types and proof-irrelevant.
-   - Eliminating a `Prop` inductive into `Type(k)` is allowed **only** when the inductive is a subsingleton (0 constructors like `False`, or 1 constructor whose fields all live in `Prop`, like `Eq` and `True`).
-   - Eliminating `Or` or `Exists` into `Type` is rejected, ensuring both logical consistency and sound proof erasure during code extraction.
+   - Eliminating a `Prop` inductive into `Type(k)` is allowed **only** when the inductive is a subsingleton (0 constructors like `False`, or 1 constructor whose every field lives in `Prop` or is forced directly by a result index, like `Eq`, `True`, and `Acc`).
+   - Eliminating `Or` or `Exists` into `Type` is rejected (`K025`), ensuring both logical consistency and sound proof erasure during code extraction.
 
-4. **Structural Decreasing Termination Checking (`Termination.scala`)**
-   - Every recursive `Fix(name, recArgIdx, ty, body)` must have an inductive parameter at `recArgIdx`.
-   - Every recursive call to `name` must be fully applied up to `recArgIdx` with a structurally strictly smaller subterm obtained from pattern matching on the decreasing parameter.
-   - Unapplied or non-decreasing recursive references are rejected, preventing `def loop(n: Nat): False = loop(n)`.
-   - During NbE (`NbE.scala`), `Fix` only unfolds when its decreasing argument is a constructor value (`VCtor`), guaranteeing termination of normalization.
+4. **Structural & Mutual Termination Checking (`Termination.scala`)**
+   - Every recursive `Fix` and mutually recursive `MutualFix` must have an inductive decreasing parameter at `recArgIdx` (shared across mutual definitions).
+   - Every recursive call must be fully applied up to `recArgIdx` with a structurally strictly smaller subterm obtained from pattern matching on the decreasing parameter (including higher-order recursive fields such as `Acc.Intro`, which enables 0-axiom well-founded recursion via `termination_by`).
+   - Unapplied or non-decreasing recursive references are rejected (`K020`), preventing `def loop(n: Nat): False = loop(n)` and mutual non-terminating cycles.
+   - During NbE (`NbE.scala`), `Fix` and `MutualFix` only unfold when their decreasing argument is a constructor value (`VCtor`), guaranteeing termination of normalization.
 
-5. **Exhaustiveness Checking (`TypeChecker.scala`)**
+5. **Total / Partial Isolation (`TypeChecker.scala`, `Env.scala`)**
+   - `partial def` declarations may use unrestricted recursion, but cannot return a `Prop` type (`K030`), are stored opaque in `KernelEnv` (never unfolded during type checking), and cannot be referenced by any total `def` or `theorem` (`K031`).
+   - Code extraction transparently reports `partialFunctions` in `ExtractionManifest` (`--total` forbids any partial function).
+
+6. **Exhaustiveness Checking (`TypeChecker.scala`)**
    - Every core `Match` must supply branches covering every constructor of the inductive type in order.
    - Surface matches on indexed families that omit provably unreachable constructors (such as `Vec[A](Nat.Succ(n))` omitting `Vec.Nil`) are compiled by the elaborator into discriminating motives and still verified in full by the kernel.
 

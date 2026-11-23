@@ -34,6 +34,8 @@ final case class MatchBranch(ctorName: String, fieldNames: List[String], body: T
   def arity: Int = fieldNames.length
 }
 
+final case class MutualFixDef(name: String, recArgIdx: Int, ty: Term, body: Term)
+
 /**
  * Core De Bruijn-indexed terms of the Proof Samurai Trusted Kernel.
  *
@@ -41,7 +43,7 @@ final case class MatchBranch(ctorName: String, fieldNames: List[String], body: T
  * - Universe stratification (Prop : Type0 : Type1 : ...)
  * - Strict positivity of inductive types
  * - Subsingleton elimination for Prop -> Type
- * - Structural decreasing guard condition for recursive Fix definitions
+ * - Structural decreasing guard condition for recursive Fix / MutualFix definitions
  * - Complete constructor coverage in Match expressions
  */
 enum Term {
@@ -62,6 +64,7 @@ enum Term {
     branches: List[MatchBranch]
   )
   case Fix(name: String, recArgIdx: Int, ty: Term, body: Term)
+  case MutualFix(defs: List[MutualFixDef], selectedIndex: Int)
 }
 
 object Term {
@@ -89,6 +92,10 @@ object Term {
         }
     case (Term.Fix(_, r1, t1, b1), Term.Fix(_, r2, t2, b2)) =>
       r1 == r2 && alphaEq(t1, t2) && alphaEq(b1, b2)
+    case (Term.MutualFix(ds1, sel1), Term.MutualFix(ds2, sel2)) =>
+      sel1 == sel2 && ds1.length == ds2.length && ds1.zip(ds2).forall { case (d1, d2) =>
+        d1.recArgIdx == d2.recArgIdx && alphaEq(d1.ty, d2.ty) && alphaEq(d1.body, d2.body)
+      }
     case _ => false
   }
 
@@ -131,6 +138,12 @@ object Term {
         )
       case Term.Fix(n, recIdx, ty, body) =>
         Term.Fix(n, recIdx, shift(ty, delta, cutoff), shift(body, delta, cutoff + 1))
+      case Term.MutualFix(defs, sel) =>
+        val k = defs.length
+        Term.MutualFix(
+          defs.map(d => d.copy(ty = shift(d.ty, delta, cutoff), body = shift(d.body, delta, cutoff + k))),
+          sel
+        )
     }
   }
 
@@ -167,6 +180,12 @@ object Term {
       )
     case Term.Fix(n, recIdx, ty, body) =>
       Term.Fix(n, recIdx, subst(ty, idx, replacement), subst(body, idx + 1, replacement))
+    case Term.MutualFix(defs, sel) =>
+      val k = defs.length
+      Term.MutualFix(
+        defs.map(d => d.copy(ty = subst(d.ty, idx, replacement), body = subst(d.body, idx + k, replacement))),
+        sel
+      )
   }
 
   /** Substitute a list of arguments [a_0, a_1, ..., a_{k-1}] for variables [k-1, ..., 0]. */
@@ -213,6 +232,12 @@ object Term {
         )
       case Term.Fix(n, recIdx, ty, body) =>
         Term.Fix(n, recIdx, substAtDepth(ty, args, depth), substAtDepth(body, args, depth + 1))
+      case Term.MutualFix(defs, sel) =>
+        val k = defs.length
+        Term.MutualFix(
+          defs.map(d => d.copy(ty = substAtDepth(d.ty, args, depth), body = substAtDepth(d.body, args, depth + k))),
+          sel
+        )
     }
   }
 
@@ -228,6 +253,7 @@ object Term {
       n == indName || ps.exists(mentionsInd(_, indName)) || mentionsInd(m, indName) ||
         mentionsInd(s, indName) || brs.exists(br => mentionsInd(br.body, indName))
     case Term.Fix(_, _, ty, b) => mentionsInd(ty, indName) || mentionsInd(b, indName)
+    case Term.MutualFix(defs, _) => defs.exists(d => mentionsInd(d.ty, indName) || mentionsInd(d.body, indName))
   }
 
   def freeVarOccurs(t: Term, idx: Int): Boolean = t match {
@@ -241,6 +267,9 @@ object Term {
       ps.exists(freeVarOccurs(_, idx)) || freeVarOccurs(m, idx) || freeVarOccurs(s, idx) ||
         brs.exists(br => freeVarOccurs(br.body, idx + br.arity))
     case Term.Fix(_, _, ty, b) => freeVarOccurs(ty, idx) || freeVarOccurs(b, idx + 1)
+    case Term.MutualFix(defs, _) =>
+      val k = defs.length
+      defs.exists(d => freeVarOccurs(d.ty, idx) || freeVarOccurs(d.body, idx + k))
   }
 
   def referencedConsts(t: Term): Set[String] = {
@@ -255,6 +284,7 @@ object Term {
       case Term.Match(_, ps, m, s, brs) =>
         ps.foreach(go); go(m); go(s); brs.foreach(br => go(br.body))
       case Term.Fix(_, _, ty, b) => go(ty); go(b)
+      case Term.MutualFix(defs, _) => defs.foreach { d => go(d.ty); go(d.body) }
     }
     go(t)
     buf.result()

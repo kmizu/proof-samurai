@@ -4,18 +4,17 @@ import scala.util.boundary
 import scala.util.boundary.break
 
 /**
- * Structural termination (guardedness) checker for recursive `Fix` definitions.
+ * Structural termination (guardedness) checker for recursive `Fix` and `MutualFix` definitions.
  *
- * Ensures every recursive call to `fix` passes a structurally strictly smaller
- * subterm of the designated decreasing inductive parameter `recursiveArgIndex`,
- * guaranteeing strong normalization and logical soundness (no `def loop: False = loop`).
+ * Ensures every recursive call passes a structurally strictly smaller subterm of the
+ * designated decreasing inductive parameter `recursiveArgIndex`, guaranteeing strong
+ * normalization and logical soundness (no `def loop: False = loop` or mutual loops).
  */
 object Termination {
 
   private final case class GuardState(
-    fixLevel: Int,
+    mutualFixTargets: Map[Int, (String, Int)], // fixLevel -> (fixName, recursiveArgIndex)
     decreasingInductiveName: String,
-    recursiveArgIndex: Int,
     currentDepth: Int,
     equalLevels: Set[Int],
     smallerLevels: Set[Int]
@@ -23,6 +22,7 @@ object Termination {
     def pushPlain: GuardState = copy(currentDepth = currentDepth + 1)
     def pushEqual: GuardState = copy(currentDepth = currentDepth + 1, equalLevels = equalLevels + currentDepth)
     def pushSmaller: GuardState = copy(currentDepth = currentDepth + 1, smallerLevels = smallerLevels + currentDepth)
+    def pushPlains(count: Int): GuardState = copy(currentDepth = currentDepth + count)
     def levelOf(deBruijnIndex: Int): Int = currentDepth - deBruijnIndex - 1
   }
 
@@ -33,52 +33,85 @@ object Termination {
     recursiveArgIndex: Int,
     fixType: Term,
     body: Term
+  ): Either[String, Unit] =
+    checkMutualFix(kernelEnv, localCtx, List(MutualFixDef(fixName, recursiveArgIndex, fixType, body)))
+
+  def checkMutualFix(
+    kernelEnv: KernelEnv,
+    localCtx: LocalCtx,
+    defs: List[MutualFixDef]
   ): Either[String, Unit] = boundary {
-    if (recursiveArgIndex < 0) {
-      break(Left(s"Recursive argument index must be non-negative in '$fixName'"))
+    if (defs.isEmpty) {
+      break(Left("Mutual recursive block cannot be empty"))
     }
 
-    // 1. Inspect `fixType` to find the inductive type at `recursiveArgIndex`.
-    val decreasingIndName = findInductiveAtArgIndex(kernelEnv, localCtx, fixType, recursiveArgIndex) match {
-      case Left(err)   => break(Left(s"Termination error in '$fixName': $err"))
-      case Right(name) => name
+    // 1. Verify every mutual definition decreases on the same inductive type.
+    val decreasingIndNames = List.newBuilder[String]
+    for (fixDef <- defs) {
+      if (fixDef.recArgIdx < 0) {
+        break(Left(s"Recursive argument index must be non-negative in '${fixDef.name}'"))
+      }
+      findInductiveAtArgIndex(kernelEnv, localCtx, fixDef.ty, fixDef.recArgIdx) match {
+        case Left(err)   => break(Left(s"Termination error in '${fixDef.name}': $err"))
+        case Right(name) => decreasingIndNames += name
+      }
+    }
+    val indNames = decreasingIndNames.result()
+    val sharedInductiveName = indNames.head
+    if (indNames.exists(_ != sharedInductiveName)) {
+      break(
+        Left(
+          s"Mutual recursive definitions must decrease on the same inductive type (found: ${indNames.distinct.mkString(", ")})"
+        )
+      )
     }
 
-    // 2. Peel off at least `recursiveArgIndex + 1` lambdas from `body`.
+    // 2. Build level -> (name, recArgIdx) table for all mutual functions in scope.
     val baseDepth = localCtx.depth
-    val fixLevel = baseDepth // `body` binds `fixName` at level `baseDepth`
-    var curTerm = body
-    var curDepth = baseDepth + 1
-    var paramLevel = -1
+    val numMutual = defs.length
+    val mutualTargets: Map[Int, (String, Int)] = defs.zipWithIndex.map { case (d, idx) =>
+      (baseDepth + idx) -> (d.name, d.recArgIdx)
+    }.toMap
 
-    for (argPos <- 0 to recursiveArgIndex) {
-      curTerm match {
-        case Term.Lam(_, _, innerBody) =>
-          if (argPos == recursiveArgIndex) {
-            paramLevel = curDepth
-          }
-          curDepth += 1
-          curTerm = innerBody
-        case _ =>
-          break(
-            Left(
-              s"Termination error in '$fixName': body must bind at least ${recursiveArgIndex + 1} " +
-                s"lambda parameter(s) to reach decreasing argument #$recursiveArgIndex"
+    // 3. Check guardedness of every body in the mutual block.
+    for (fixDef <- defs) {
+      var curTerm = fixDef.body
+      var curDepth = baseDepth + numMutual
+      var paramLevel = -1
+
+      for (argPos <- 0 to fixDef.recArgIdx) {
+        curTerm match {
+          case Term.Lam(_, _, innerBody) =>
+            if (argPos == fixDef.recArgIdx) {
+              paramLevel = curDepth
+            }
+            curDepth += 1
+            curTerm = innerBody
+          case _ =>
+            break(
+              Left(
+                s"Termination error in '${fixDef.name}': body must bind at least ${fixDef.recArgIdx + 1} " +
+                  s"lambda parameter(s) to reach decreasing argument #${fixDef.recArgIdx}"
+              )
             )
-          )
+        }
+      }
+
+      val initialState = GuardState(
+        mutualFixTargets = mutualTargets,
+        decreasingInductiveName = sharedInductiveName,
+        currentDepth = curDepth,
+        equalLevels = Set(paramLevel),
+        smallerLevels = Set.empty
+      )
+
+      checkGuarded(kernelEnv, fixDef.name, curTerm, initialState) match {
+        case Left(err) => break(Left(err))
+        case Right(()) => ()
       }
     }
 
-    val initialState = GuardState(
-      fixLevel = fixLevel,
-      decreasingInductiveName = decreasingIndName,
-      recursiveArgIndex = recursiveArgIndex,
-      currentDepth = curDepth,
-      equalLevels = Set(paramLevel),
-      smallerLevels = Set.empty
-    )
-
-    checkGuarded(kernelEnv, fixName, curTerm, initialState)
+    Right(())
   }
 
   private def findInductiveAtArgIndex(
@@ -86,7 +119,7 @@ object Termination {
     localCtx: LocalCtx,
     fixType: Term,
     targetIndex: Int
-  ): Either[String, String] = {
+  ): Either[String, String] = boundary {
     val fuel = new NbE.Fuel()
     var evalEnv = NbE.buildEvalEnv(kernelEnv, localCtx, fuel)
     var curValue = NbE.evaluate(kernelEnv, evalEnv, fixType, fuel)
@@ -98,11 +131,13 @@ object Termination {
         case Value.VPi(_, domain, codomain) =>
           if (pos == targetIndex) {
             domain match {
-              case Value.VInd(indName, _) => return Right(indName)
+              case Value.VInd(indName, _) => break(Right(indName))
               case other =>
                 val domainTerm = NbE.quote(kernelEnv, curDepth, other, fuel)
-                return Left(
-                  s"decreasing parameter #$targetIndex must have an inductive type, found '${Pretty.show(domainTerm)}'"
+                break(
+                  Left(
+                    s"decreasing parameter #$targetIndex must have an inductive type, found '${Pretty.show(domainTerm)}'"
+                  )
                 )
             }
           } else {
@@ -113,7 +148,7 @@ object Termination {
             pos += 1
           }
         case _ =>
-          return Left(s"function type has fewer than ${targetIndex + 1} parameter(s)")
+          break(Left(s"function type has fewer than ${targetIndex + 1} parameter(s)"))
       }
     }
     Left(s"could not locate parameter #$targetIndex")
@@ -129,13 +164,15 @@ object Termination {
       Right(())
 
     case Term.Var(index) =>
-      if (state.levelOf(index) == state.fixLevel) {
-        Left(
-          s"Termination error in '$fixName': recursive reference '$fixName' cannot be used unapplied " +
-            s"(must be applied to a structurally smaller argument at position #${state.recursiveArgIndex})"
-        )
-      } else {
-        Right(())
+      val lvl = state.levelOf(index)
+      state.mutualFixTargets.get(lvl) match {
+        case Some((calleeName, calleeRecIdx)) =>
+          Left(
+            s"Termination error in '$fixName': recursive reference '$calleeName' cannot be used unapplied " +
+              s"(must be applied to a structurally smaller argument at position #$calleeRecIdx)"
+          )
+        case None =>
+          Right(())
       }
 
     case Term.Pi(_, domain, codomain) =>
@@ -164,22 +201,23 @@ object Termination {
 
     case app @ Term.App(_, _) =>
       val (head, args) = Term.splitApps(app)
-      // First verify all argument subterms are guarded
       checkList(kernelEnv, fixName, args, state).flatMap { _ =>
         head match {
-          case Term.Var(index) if state.levelOf(index) == state.fixLevel =>
-            if (args.length <= state.recursiveArgIndex) {
+          case Term.Var(index) if state.mutualFixTargets.contains(state.levelOf(index)) =>
+            val (calleeName, calleeRecIdx) = state.mutualFixTargets(state.levelOf(index))
+            if (args.length <= calleeRecIdx) {
               Left(
-                s"Termination error in '$fixName': recursive call to '$fixName' is under-applied " +
-                  s"(expected at least ${state.recursiveArgIndex + 1} argument(s), got ${args.length})"
+                s"Termination error in '$fixName': recursive call to '$calleeName' is under-applied " +
+                  s"(expected at least ${calleeRecIdx + 1} argument(s), got ${args.length})"
               )
             } else {
-              val recArg = args(state.recursiveArgIndex)
+              val recArg = args(calleeRecIdx)
               if (isStrictlySmallerTerm(recArg, state)) Right(())
-              else Left(
-                s"Termination error in '$fixName': recursive call argument #${state.recursiveArgIndex} " +
-                  s"is not structurally strictly smaller than the decreasing parameter"
-              )
+              else
+                Left(
+                  s"Termination error in '$fixName': recursive call to '$calleeName' argument #$calleeRecIdx " +
+                    s"is not structurally strictly smaller than the decreasing parameter"
+                )
             }
           case _ =>
             checkGuarded(kernelEnv, fixName, head, state)
@@ -199,6 +237,21 @@ object Termination {
         _ <- checkGuarded(kernelEnv, fixName, ty, state)
         _ <- checkGuarded(kernelEnv, fixName, innerBody, state.pushPlain)
       } yield ()
+
+    case Term.MutualFix(innerDefs, _) =>
+      boundary {
+        for (d <- innerDefs) {
+          checkGuarded(kernelEnv, fixName, d.ty, state) match {
+            case Left(err) => break(Left(err))
+            case Right(()) => ()
+          }
+          checkGuarded(kernelEnv, fixName, d.body, state.pushPlains(innerDefs.length)) match {
+            case Left(err) => break(Left(err))
+            case Right(()) => ()
+          }
+        }
+        Right(())
+      }
   }
 
   private def checkBranches(
@@ -236,7 +289,7 @@ object Termination {
 
   /**
    * True if `fieldType` is `Ind(indName)(...)` or `Pi(..., Ind(indName)(...))`
-   * (supporting both direct recursive fields like `Succ(pred: Nat)` and higher-order fields like `Lim(f: Nat => Ord)`).
+   * (supporting both direct recursive fields like `Succ(pred: Nat)` and higher-order fields like `Lim(f: Nat => Ord)` or `Acc.Intro`).
    */
   private def isRecursiveFieldType(fieldType: Term, indName: String): Boolean = fieldType match {
     case Term.Pi(_, _, codomain) => isRecursiveFieldType(codomain, indName)
@@ -247,7 +300,7 @@ object Termination {
 
   /**
    * True if `term` is a variable in `smallerLevels`, OR a higher-order subterm variable in
-   * `smallerLevels` applied to arguments (e.g., `f(n)` where `f: Nat => Ord` came from `Lim(f)`).
+   * `smallerLevels` applied to arguments (e.g., `inv(y, ltProof)` from `Acc.Intro`).
    */
   private def isStrictlySmallerTerm(term: Term, state: GuardState): Boolean = term match {
     case Term.Var(index) =>

@@ -9,10 +9,18 @@ final case class BranchClosure(
   bodyTerm: Term
 )
 
+final case class MutualFixClosure(
+  name: String,
+  recursiveArgIndex: Int,
+  fixType: Value,
+  bodyClosure: Closure
+)
+
 enum NeutralHead {
   case NVar(level: Int)
   case NConst(constName: String)
   case NFix(fixName: String, recursiveArgIndex: Int, fixType: Value, bodyClosure: Closure)
+  case NMutualFix(defs: List[MutualFixClosure], selectedIndex: Int)
 }
 
 enum Eliminator {
@@ -78,6 +86,32 @@ object NbE {
     quote(kernelEnv, localCtx.depth, value, fuel)
   }
 
+  /**
+   * Fuel-bounded evaluation for `#eval` directives only (NEVER used in typechecking/conversion).
+   * Temporarily allows unfolding `partial def`s so `#eval collatzSteps(6)` computes safely.
+   */
+  def normalizeAllowPartial(
+    kernelEnv: KernelEnv,
+    localCtx: LocalCtx,
+    term: Term,
+    maxSteps: Int = 200_000
+  ): Either[String, Term] = {
+    try {
+      val evalEnvWithPartials = kernelEnv.copy(
+        defs = kernelEnv.defs.map { case (k, v) =>
+          if (v.isPartial) k -> v.copy(transparent = true) else k -> v
+        }
+      )
+      val fuel = new Fuel(maxSteps)
+      val evalEnv = buildEvalEnv(evalEnvWithPartials, localCtx, fuel)
+      val value = evaluate(evalEnvWithPartials, evalEnv, term, fuel)
+      Right(quote(evalEnvWithPartials, localCtx.depth, value, fuel))
+    } catch {
+      case ex: FuelExceededException =>
+        Left(s"Evaluation step limit exceeded ($maxSteps steps): ${ex.message}")
+    }
+  }
+
   def evaluate(kernelEnv: KernelEnv, evalEnv: List[Value], term: Term, fuel: Fuel = new Fuel()): Value = {
     fuel.consume()
     term match {
@@ -129,6 +163,13 @@ object NbE {
       case Term.Fix(fixName, recursiveArgIndex, fixType, body) =>
         val fixTypeValue = evaluate(kernelEnv, evalEnv, fixType, fuel)
         Value.VNeutral(NeutralHead.NFix(fixName, recursiveArgIndex, fixTypeValue, Closure(evalEnv, body)), Nil)
+
+      case Term.MutualFix(defs, selectedIndex) =>
+        val closures = defs.map { d =>
+          val tyVal = evaluate(kernelEnv, evalEnv, d.ty, fuel)
+          MutualFixClosure(d.name, d.recArgIdx, tyVal, Closure(evalEnv, d.body))
+        }
+        Value.VNeutral(NeutralHead.NMutualFix(closures, selectedIndex), Nil)
     }
   }
 
@@ -165,6 +206,29 @@ object NbE {
           }
         } else {
           Value.VNeutral(fixHead, extendedSpine)
+        }
+
+      case Value.VNeutral(mHead @ NeutralHead.NMutualFix(defs, selectedIndex), spine) =>
+        val extendedSpine = spine :+ Eliminator.EApp(argumentValue)
+        val selected = defs(selectedIndex)
+        val pureApps = extendedSpine.forall {
+          case Eliminator.EApp(_) => true
+          case _                  => false
+        }
+        if (pureApps && extendedSpine.length > selected.recursiveArgIndex) {
+          extendedSpine(selected.recursiveArgIndex) match {
+            case Eliminator.EApp(Value.VCtor(_, _, _)) =>
+              // Push all mutual self-values (0 .. k-1) left-to-right onto capturedEnv so defs(k-1) is at index 0
+              val selfEnv = defs.indices.foldLeft(selected.bodyClosure.capturedEnv) { (envAcc, idx) =>
+                Value.VNeutral(NeutralHead.NMutualFix(defs, idx), Nil) :: envAcc
+              }
+              val unfoldedBody = evaluate(kernelEnv, selfEnv, selected.bodyClosure.bodyTerm, fuel)
+              applySpine(kernelEnv, unfoldedBody, extendedSpine, fuel)
+            case _ =>
+              Value.VNeutral(mHead, extendedSpine)
+          }
+        } else {
+          Value.VNeutral(mHead, extendedSpine)
         }
 
       case Value.VNeutral(head, spine) =>
@@ -251,6 +315,18 @@ object NbE {
             val freshSelf = Value.VNeutral(NeutralHead.NVar(depth), Nil)
             val quotedBody = quote(kernelEnv, depth + 1, applyClosure(kernelEnv, bodyClosure, freshSelf, fuel), fuel)
             Term.Fix(fixName, recursiveArgIndex, quotedFixType, quotedBody)
+          case NeutralHead.NMutualFix(defs, selectedIndex) =>
+            val k = defs.length
+            val quotedDefs = defs.map { d =>
+              val qTy = quote(kernelEnv, depth, d.fixType, fuel)
+              val bodyEnv = (0 until k).foldLeft(d.bodyClosure.capturedEnv) { (envAcc, offset) =>
+                Value.VNeutral(NeutralHead.NVar(depth + offset), Nil) :: envAcc
+              }
+              val bodyVal = evaluate(kernelEnv, bodyEnv, d.bodyClosure.bodyTerm, fuel)
+              val qBody = quote(kernelEnv, depth + k, bodyVal, fuel)
+              MutualFixDef(d.name, d.recursiveArgIndex, qTy, qBody)
+            }
+            Term.MutualFix(quotedDefs, selectedIndex)
         }
         spine.foldLeft(quotedHead) { (acc, eliminator) =>
           eliminator match {
@@ -428,6 +504,24 @@ object NbE {
             fuel
           )
         }
+    case (NeutralHead.NMutualFix(ds1, sel1), NeutralHead.NMutualFix(ds2, sel2)) =>
+      sel1 == sel2 && ds1.length == ds2.length && {
+        val k = ds1.length
+        ds1.zip(ds2).forall { case (d1, d2) =>
+          d1.recursiveArgIndex == d2.recursiveArgIndex &&
+            areConvertible(kernelEnv, depth, d1.fixType, d2.fixType, fuel) && {
+              val env1 = (0 until k).foldLeft(d1.bodyClosure.capturedEnv) { (envAcc, offset) =>
+                Value.VNeutral(NeutralHead.NVar(depth + offset), Nil) :: envAcc
+              }
+              val env2 = (0 until k).foldLeft(d2.bodyClosure.capturedEnv) { (envAcc, offset) =>
+                Value.VNeutral(NeutralHead.NVar(depth + offset), Nil) :: envAcc
+              }
+              val v1 = evaluate(kernelEnv, env1, d1.bodyClosure.bodyTerm, fuel)
+              val v2 = evaluate(kernelEnv, env2, d2.bodyClosure.bodyTerm, fuel)
+              areConvertible(kernelEnv, depth + k, v1, v2, fuel)
+            }
+        }
+      }
     case _ => false
   }
 

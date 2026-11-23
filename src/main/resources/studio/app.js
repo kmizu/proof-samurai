@@ -91,7 +91,7 @@
   function highlightSamurai(code) {
     const escaped = escapeHtml(code);
     const tokenRe =
-      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|val|theorem|lemma|axiom|match|if|else|by|calc|forall|exists|returning|sorry|true|false)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|And|Or|Not|False|True|Unit|Either)\b|\b([0-9]+)\b|(===|!==|=&gt;|->|\/\\|\\\/|::|\+\+)/g;
+      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|partial|mutual|termination_by|decreasing_by|val|theorem|lemma|axiom|match|if|else|by|calc|forall|exists|returning|sorry|true|false)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|Lt|Acc|And|Or|Not|False|True|Unit|Either)\b|\b([0-9]+)\b|(===|!==|=&gt;|->|\/\\|\\\/|::|\+\+)/g;
 
     return escaped.replace(tokenRe, (m, comment, hole, kw, tactic, ty, num, op) => {
       if (comment) return `<span class="tok-comment">${comment}</span>`;

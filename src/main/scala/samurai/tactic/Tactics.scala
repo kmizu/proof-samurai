@@ -214,32 +214,46 @@ object Tactics {
 
     var matched = false
     var attempts = 0
+    var lastUnifyError = ""
     while (!matched && attempts < 32) {
       metaCtx.unify(env.kernelEnv, goal.localCtx, curType, goal.targetType, allowSubtyping = true) match {
         case Right(()) =>
           matched = true
-        case Left(_) =>
-          val tyVal = NbE.evaluate(env.kernelEnv, evalEnv, metaCtx.zonk(curType, goal.localCtx.depth), fuel)
-          tyVal match {
-            case Value.VPi(binderName, domVal, codClosure) =>
-              val domTerm = NbE.quote(env.kernelEnv, goal.localCtx.depth, domVal, fuel)
+        case Left(uErr) =>
+          lastUnifyError = uErr
+          val zonkedCur = metaCtx.zonk(curType, goal.localCtx.depth)
+          zonkedCur match {
+            case Term.Pi(binderName, domTerm, codTerm) =>
+              // Peel Pi syntactically first so transparent definitions (e.g. Lt, blt, length) stay folded for unification!
               val metaTerm = metaCtx.freshMeta(goal.localCtx.depth, domTerm, Some(binderName))
               val metaId = MetaContext.parseMetaId(metaTerm.asInstanceOf[Term.Const].name).get
               argMetas += ((metaId, binderName, domTerm))
               curTerm = Term.App(curTerm, metaTerm)
-              val metaVal = NbE.evaluate(env.kernelEnv, evalEnv, metaTerm, fuel)
-              curType = NbE.quote(env.kernelEnv, goal.localCtx.depth, NbE.applyClosure(env.kernelEnv, codClosure, metaVal, fuel), fuel)
+              curType = Term.subst(codTerm, 0, metaTerm)
               attempts += 1
             case _ =>
-              return Left(
-                Diagnostic(
-                  Diagnostic.Severity.Error,
-                  "T005",
-                  s"Cannot apply term of type '${Pretty.show(metaCtx.zonk(baseType, goal.localCtx.depth), goal.localCtx.names)}' " +
-                    s"to goal '${Pretty.show(goal.targetType, goal.localCtx.names)}'",
-                  span
-                )
-              )
+              val tyVal = NbE.evaluate(env.kernelEnv, evalEnv, zonkedCur, fuel)
+              tyVal match {
+                case Value.VPi(binderName, domVal, codClosure) =>
+                  val domTerm = NbE.quote(env.kernelEnv, goal.localCtx.depth, domVal, fuel)
+                  val metaTerm = metaCtx.freshMeta(goal.localCtx.depth, domTerm, Some(binderName))
+                  val metaId = MetaContext.parseMetaId(metaTerm.asInstanceOf[Term.Const].name).get
+                  argMetas += ((metaId, binderName, domTerm))
+                  curTerm = Term.App(curTerm, metaTerm)
+                  val metaVal = NbE.evaluate(env.kernelEnv, evalEnv, metaTerm, fuel)
+                  curType = NbE.quote(env.kernelEnv, goal.localCtx.depth, NbE.applyClosure(env.kernelEnv, codClosure, metaVal, fuel), fuel)
+                  attempts += 1
+                case _ =>
+                  return Left(
+                    Diagnostic(
+                      Diagnostic.Severity.Error,
+                      "T005",
+                      s"Cannot apply term of type '${Pretty.show(metaCtx.zonk(baseType, goal.localCtx.depth), goal.localCtx.names)}' " +
+                        s"to goal '${Pretty.show(goal.targetType, goal.localCtx.names)}' ($lastUnifyError)",
+                      span
+                    )
+                  )
+              }
           }
       }
     }
@@ -315,6 +329,17 @@ object Tactics {
       )
     case Term.Fix(n, r, ty, b) =>
       Term.Fix(n, r, substituteGoalMetas(ty, metaToGoal, solutions, depthOffset), substituteGoalMetas(b, metaToGoal, solutions, depthOffset + 1))
+    case Term.MutualFix(defs, sel) =>
+      val k = defs.length
+      Term.MutualFix(
+        defs.map(d =>
+          d.copy(
+            ty = substituteGoalMetas(d.ty, metaToGoal, solutions, depthOffset),
+            body = substituteGoalMetas(d.body, metaToGoal, solutions, depthOffset + k)
+          )
+        ),
+        sel
+      )
   }
 
   // ===========================================================================
@@ -705,6 +730,16 @@ object Tactics {
           val (ty2, c1) = go(ty, bindDepth)
           val (b2, c2) = go(b, bindDepth + 1)
           (Term.Fix(n, r, ty2, b2), c1 + c2)
+        case Term.MutualFix(defs, sel) =>
+          val k = defs.length
+          var total = 0
+          val defs2 = defs.map { d =>
+            val (ty2, c1) = go(d.ty, bindDepth)
+            val (b2, c2) = go(d.body, bindDepth + k)
+            total += c1 + c2
+            d.copy(ty = ty2, body = b2)
+          }
+          (Term.MutualFix(defs2, sel), total)
       }
     }
 
@@ -1252,6 +1287,17 @@ object Tactics {
       )
     case Term.Fix(n, r, ty, b) =>
       Term.Fix(n, r, replaceVarInTerm(ty, targetIdx, replacement), replaceVarInTerm(b, targetIdx + 1, Term.shift(replacement, 1)))
+    case Term.MutualFix(defs, sel) =>
+      val k = defs.length
+      Term.MutualFix(
+        defs.map(d =>
+          d.copy(
+            ty = replaceVarInTerm(d.ty, targetIdx, replacement),
+            body = replaceVarInTerm(d.body, targetIdx + k, Term.shift(replacement, k))
+          )
+        ),
+        sel
+      )
   }
 
   // ===========================================================================

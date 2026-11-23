@@ -74,6 +74,7 @@ object Pretty {
   private def headFunctionName(term: Term): Option[String] = term match {
     case Term.Const(name)        => Some(name)
     case Term.Fix(name, _, _, _) => Some(name)
+    case Term.MutualFix(defs, sel) if sel >= 0 && sel < defs.length => Some(defs(sel).name)
     case _                       => None
   }
 
@@ -142,6 +143,18 @@ object Pretty {
         } else {
           val clean = freshName(fixName, names)
           s"fix $clean[$recIdx]: ${showPrec(fixType, names, 0, expandFix)} = ${showPrec(body, clean :: names, 0, expandFix)}"
+        }
+
+      case Term.MutualFix(defs, sel) =>
+        val selected = if (sel >= 0 && sel < defs.length) defs(sel).name else s"mutual#$sel"
+        if (!expandFix) {
+          selected
+        } else {
+          val boundNames = defs.foldLeft(names)((ns, d) => freshName(d.name, ns) :: ns)
+          val parts = defs.map { d =>
+            s"${d.name}[${d.recArgIdx}]: ${showPrec(d.ty, names, 0, expandFix)} = ${showPrec(d.body, boundNames, 0, expandFix)}"
+          }.mkString("; ")
+          s"mutual { $parts }.$selected"
         }
     }
   }

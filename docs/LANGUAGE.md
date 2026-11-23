@@ -52,6 +52,66 @@ theorem addZeroRight(value: Nat): value + 0 === value = by {
 }
 ```
 
+### Mutual Structural Recursion (`mutual { ... }`)
+Mutually recursive functions decreasing structurally on a shared inductive type are verified by the kernel via `MutualFix`:
+
+```scala
+mutual {
+  def isEven(value: Nat): Bool = {
+    value match {
+      case Nat.Zero => true
+      case Nat.Succ(pred) => isOdd(pred)
+    }
+  }
+
+  def isOdd(value: Nat): Bool = {
+    value match {
+      case Nat.Zero => false
+      case Nat.Succ(pred) => isEven(pred)
+    }
+  }
+}
+```
+
+### Well-Founded Recursion (`termination_by` / `decreasing_by`)
+Import `WellFounded.*` to write fuel-free general recursive algorithms (such as Euclidean `gcd`, `divNat`, `modNat`, and `quickSort`) backed by 0-axiom constructive `Acc[Nat, Lt]` proofs. All `Acc` and `Lt` proofs live in `Prop` and are completely erased during code extraction:
+
+```scala
+import WellFounded.*
+
+def quickSort(items: List[Nat]): List[Nat] = {
+  items match {
+    case [] => []
+    case pivot :: rest => {
+      val smaller = filter((elem: Nat) => elem <= pivot, rest)
+      val larger = filter((elem: Nat) => pivot < elem, rest)
+      quickSort(smaller) ++ (pivot :: quickSort(larger))
+    }
+  }
+} termination_by {
+  length(items)
+}
+```
+
+If an algorithm uses a custom measure decrease, supply an explicit `decreasing_by { ... }` tactic block or annotate a helper lemma with `@wf`.
+
+### Sound Isolated General Recursion (`partial def`)
+For computations whose termination is unknown or unbounded (such as Collatz sequences or event loops), mark a function `partial def`. To preserve logical soundness:
+- A `partial def` cannot return `Prop` (`K030`), and theorems cannot be marked `partial`.
+- Total definitions and theorems cannot reference any `partial def` (`K031`).
+- `NbE` never unfolds `partial def` during type checking; `#eval` evaluates it with a bounded step limit, and code extraction emits native recursion while recording it under `partialFunctions` in the extraction manifest (rejected when `--total` is passed).
+
+```scala
+partial def collatzSteps(value: Nat): Nat = {
+  if (value <= 1) {
+    0
+  } else {
+    if (isEven(value)) { 1 + collatzSteps(half(value)) }
+    else { 1 + collatzSteps(3 * value + 1) }
+  }
+}
+```
+
 ## Operators & Sugar
 | Syntax | Meaning |
 |---|---|

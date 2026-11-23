@@ -56,6 +56,70 @@ theorem addZeroRight(value: Nat): value + 0 === value = by {
 }
 ```
 
+### 相互構造的再帰（`mutual { ... }`）
+
+同一の帰納型に対して構造的に減少する相互再帰関数は、カーネルの `MutualFix` により停止性が検証されます。
+
+```scala
+mutual {
+  def isEven(value: Nat): Bool = {
+    value match {
+      case Nat.Zero => true
+      case Nat.Succ(pred) => isOdd(pred)
+    }
+  }
+
+  def isOdd(value: Nat): Bool = {
+    value match {
+      case Nat.Zero => false
+      case Nat.Succ(pred) => isEven(pred)
+    }
+  }
+}
+```
+
+### 整礎再帰（`termination_by` / `decreasing_by`）
+
+`import WellFounded.*` を読み込むと、構成的到達可能性述語 `Acc[Nat, Lt]`（公理 0）に基づく整礎再帰を記述できます。`fuel: Nat` を引き回すことなくユークリッドの互除法 `gcd`、除算 `divNat`、剰余 `modNat`、クイックソート `quickSort` 等を自然に定義でき、`Acc` と `Lt` の証明項はコード抽出時に完全に消去されます。
+
+```scala
+import WellFounded.*
+
+def quickSort(items: List[Nat]): List[Nat] = {
+  items match {
+    case [] => []
+    case pivot :: rest => {
+      val smaller = filter((elem: Nat) => elem <= pivot, rest)
+      val larger = filter((elem: Nat) => pivot < elem, rest)
+      quickSort(smaller) ++ (pivot :: quickSort(larger))
+    }
+  }
+} termination_by {
+  length(items)
+}
+```
+
+独自の測度を用いる場合は、末尾に `decreasing_by { ... }` タクティクブロックを記述するか、補助補題に `@wf` アノテーションを付けて自動減少証明へ登録できます。
+
+### 健全に隔離された一般再帰（`partial def`）
+
+停止性が未知あるいは無界な計算（コラッツ列やイベントループ等）には `partial def` を使用できます。論理的健全性を守るため、カーネルは以下の規則を強制します。
+
+- `partial def` は `Prop` 型を返せません（`K030`）。`theorem` / `lemma` も `partial` にできません。
+- 全関数（通常の `def`）および定理（`theorem`）から `partial def` を参照できません（`K031`）。
+- 型検査中の NbE は `partial def` を展開しません。`#eval` ではステップ上限付きで評価され、コード抽出では通常の再帰関数として出力しつつ `ExtractionManifest` の `partialFunctions` に明記されます（`--total` 指定時は拒否）。
+
+```scala
+partial def collatzSteps(value: Nat): Nat = {
+  if (value <= 1) {
+    0
+  } else {
+    if (isEven(value)) { 1 + collatzSteps(half(value)) }
+    else { 1 + collatzSteps(3 * value + 1) }
+  }
+}
+```
+
 ## 演算子と糖衣構文
 
 | 構文 | 意味 |

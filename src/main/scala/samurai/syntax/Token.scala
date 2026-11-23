@@ -10,6 +10,10 @@ enum TokenKind {
   case KwCase
   case KwClass
   case KwDef
+  case KwPartial
+  case KwMutual
+  case KwTerminationBy
+  case KwDecreasingBy
   case KwVal
   case KwTheorem
   case KwLemma

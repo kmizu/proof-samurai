@@ -18,7 +18,8 @@
     { mod: "stdlib/Tree.samurai", en: "Binary trees, mirror, size, and dual-IH structural induction proofs", ja: "二分木、mirror / size、複数の帰納法仮定を用いる構造的帰納法証明" },
     { mod: "stdlib/Option.samurai", en: "Verified Option functor and monad laws", ja: "Option 型のファンクタ則・モナド則の証明" },
     { mod: "stdlib/Queue.samurai", en: "Amortized two-stack functional queue with FIFO specification proofs", ja: "2 スタック関数型キューと FIFO 仕様の正当性証明" },
-    { mod: "stdlib/Sorting.samurai", en: "Insertion sort with Sorted, element-count permutation, and length proofs", ja: "挿入ソートの整列性（Sorted）・多重集合置換・長さ保存の完全証明" }
+    { mod: "stdlib/Sorting.samurai", en: "Insertion sort with Sorted, element-count permutation, and length proofs", ja: "挿入ソートの整列性（Sorted）・多重集合置換・長さ保存の完全証明" },
+    { mod: "stdlib/WellFounded.samurai", en: "0-axiom Acc, natWf, strong induction, divNat, modNat, gcd, and quickSort", ja: "公理 0 の Acc・natWf・完全帰納法、整礎再帰の divNat / modNat / gcd / quickSort" }
   ];
 
   const INDEX_ITEMS = [
@@ -37,6 +38,7 @@
     { kind: "error", name: "K025", trigger: { en: "Prop -> Type elimination", ja: "Prop から Type への除去" }, desc: { en: "Cannot eliminate Or or Exists into Type; use Either or Subset for runtime data.", ja: "Or や Exists は Type へ除去できません。実行時値には Either または Subset を使用してください。" } },
     { kind: "error", name: "K005", trigger: { en: "Universe level exceeded", ja: "宇宙レベル超過" }, desc: { en: "A Type0 inductive cannot store Type0 fields; declare the enum as `: Type1`.", ja: "Type0 の帰納型に Type0 の型は格納できません。`: Type1` を明示してください。" } },
     { kind: "error", name: "K026 / E071", trigger: { en: "Non-exhaustive match", ja: "非網羅的な match" }, desc: { en: "Cover every constructor of the enum or add a `case _ => ...` fallback.", ja: "すべてのコンストラクタを網羅するか、`case _ => ...` を追加してください。" } },
+    { kind: "error", name: "K030 / K031", trigger: { en: "partial def in Prop / total caller", ja: "partial def の Prop 返却・全関数からの参照" }, desc: { en: "Keep partial def in Type and isolated from total defs/theorems, or use termination_by.", ja: "partial def は Type 返却かつ全関数・定理から隔離するか、termination_by を使用してください。" } },
     { kind: "error", name: "T010 / T015", trigger: { en: "refl / rewrite failed", ja: "refl / rewrite の失敗" }, desc: { en: "Try `simp`, `arith`, `rewriteRev(...)`, or place `?help` to inspect the goal.", ja: "`simp`、`arith`、`rewriteRev(...)` を試すか、`?help` を置いてゴールを確認してください。" } }
   ];
 
@@ -216,7 +218,7 @@ object VerifiedSorting {
   function highlightSamurai(code) {
     const escaped = escapeHtml(code);
     const tokenRe =
-      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|val|theorem|lemma|axiom|match|if|else|by|calc|forall|exists|returning|sorry|true|false|object|final)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|And|Or|Not|False|True|Unit|Either)\b|\b([0-9]+)\b|(===|!==|=&gt;|->|\/\\|\\\/|::|\+\+)/g;
+      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|partial|mutual|termination_by|decreasing_by|val|theorem|lemma|axiom|match|if|else|by|calc|forall|exists|returning|sorry|true|false|object|final)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|Lt|Acc|And|Or|Not|False|True|Unit|Either)\b|\b([0-9]+)\b|(===|!==|=&gt;|->|\/\\|\\\/|::|\+\+)/g;
 
     return escaped.replace(tokenRe, (m, comment, hole, kw, tactic, ty, num, op) => {
       if (comment) return `<span class="tok-comment">${comment}</span>`;

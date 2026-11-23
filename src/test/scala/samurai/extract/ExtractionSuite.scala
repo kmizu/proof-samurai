@@ -129,4 +129,103 @@ class ExtractionSuite extends FunSuite {
       s"Unexpected runtime output: $runOut"
     )
   }
+
+  test("end-to-end: extracts mutual recursion, well-founded divNat/gcd/quickSort (Acc erased), and partial collatzSteps to Scala 3 and executes on JVM") {
+    val env = Elaborator
+      .checkFile(Paths.get("examples", "AdvancedRecursion.samurai"), ElabEnv(searchPaths = searchPaths))
+      .fold(d => fail(d.formatHuman()), identity)
+
+    // requireTotal=true rejects files with partial defs
+    val totalRejected = Erasure.extract(env, Erasure.ExtractionOptions("StrictTotal", requireAxiomFree = true, requireTotal = true))
+    assert(totalRejected.isLeft, "requireTotal must reject partial functions")
+
+    // requireAxiomFree=true extracts cleanly while transparently reporting partialFunctions in manifest
+    val extracted = Erasure
+      .extract(env, Erasure.ExtractionOptions("ExtractedAdvanced", requireAxiomFree = true))
+      .fold(err => fail(err), identity)
+
+    assert(extracted.manifest.isAxiomFree)
+    assertEquals(extracted.manifest.partialFunctions, List("collatzSteps"))
+    assert(!extracted.manifest.isTotal)
+    assert(extracted.manifest.erasedPropositions.contains("Acc"))
+
+    val scalaCode = Scala3Emitter.emit(extracted)
+    assert(!scalaCode.contains("enum Acc"), "Acc must be completely erased")
+    assert(!scalaCode.contains("def natWf"), "natWf must be completely erased")
+    assert(!scalaCode.contains("_wfCurMeasure"), "Dead Acc index let-bindings must be eliminated")
+    assert(scalaCode.contains("def quickSort"))
+    assert(scalaCode.contains("def gcd"))
+    assert(scalaCode.contains("def isEven"))
+    assert(scalaCode.contains("def collatzSteps"))
+
+    val tsCode = TsEmitter.emit(extracted)
+    assert(tsCode.contains("export function quickSort"))
+    assert(tsCode.contains("export function gcd"))
+    assert(tsCode.contains("export function collatzSteps"))
+
+    val driverCode =
+      s"""$scalaCode
+         |
+         |object AdvancedRunner {
+         |  import ExtractedAdvanced.*
+         |
+         |  def toNat(n: Int): Nat = if (n <= 0) Nat.Zero else Nat.Succ(toNat(n - 1))
+         |  def fromNat(n: Nat): Int = n match {
+         |    case Nat.Zero => 0
+         |    case Nat.Succ(p) => 1 + fromNat(p)
+         |  }
+         |  def fromBool(b: Bool): Boolean = b match {
+         |    case Bool.True => true
+         |    case Bool.False => false
+         |  }
+         |  def toList(xs: scala.List[Int]): List[Nat] =
+         |    xs.foldRight[List[Nat]](List.Nil[Nat]())((x, acc) => List.Cons[Nat](toNat(x), acc))
+         |  def fromList(xs: List[Nat]): scala.List[Int] = xs match {
+         |    case List.Nil() => scala.Nil
+         |    case List.Cons(h, t) => fromNat(h) :: fromList(t)
+         |  }
+         |
+         |  def main(args: Array[String]): scala.Unit = {
+         |    val ev = fromBool(isEven(toNat(10)))
+         |    val od = fromBool(isOdd(toNat(11)))
+         |    val d = fromNat(divNat(toNat(17), toNat(5)))
+         |    val m = fromNat(modNat(toNat(17), toNat(5)))
+         |    val g = fromNat(gcd(toNat(48), toNat(18)))
+         |    val qs = fromList(quickSort(toList(scala.List(5, 1, 4, 2, 3))))
+         |    val lg = fromNat(log2Floor(toNat(16)))
+         |    val col = fromNat(collatzSteps(toNat(6)))
+         |    println(s"ev=$$ev;od=$$od;d=$$d;m=$$m;g=$$g;qs=$${qs.mkString(",")};lg=$$lg;col=$$col")
+         |  }
+         |}
+         |""".stripMargin
+
+    val tempDir = Files.createTempDirectory("samurai-advanced-extract")
+    val srcFile = tempDir.resolve("ExtractedAdvanced.scala")
+    val outClasses = tempDir.resolve("classes")
+    Files.createDirectories(outClasses)
+    Files.writeString(srcFile, driverCode)
+
+    val testClasspath = System.getProperty("java.class.path")
+    val compileProc = new ProcessBuilder(
+      "java", "-cp", testClasspath, "dotty.tools.dotc.Main",
+      "-classpath", testClasspath,
+      "-d", outClasses.toString,
+      srcFile.toString
+    ).redirectErrorStream(true).start()
+    val compileOut = new String(compileProc.getInputStream.readAllBytes())
+    val compileCode = compileProc.waitFor()
+    assertEquals(compileCode, 0, s"Extracted Advanced Scala 3 failed to compile!\nCode:\n$driverCode\nOutput:\n$compileOut")
+
+    val runCp = s"${outClasses.toString}${java.io.File.pathSeparator}$testClasspath"
+    val runProc = new ProcessBuilder("java", "-cp", runCp, "AdvancedRunner")
+      .redirectErrorStream(true)
+      .start()
+    val runOut = new String(runProc.getInputStream.readAllBytes()).trim
+    val runCode = runProc.waitFor()
+    assertEquals(runCode, 0, s"Extracted Advanced JVM execution failed:\n$runOut")
+    assert(
+      runOut.contains("ev=true;od=true;d=3;m=2;g=6;qs=1,2,3,4,5;lg=4;col=8"),
+      s"Unexpected runtime output: $runOut"
+    )
+  }
 }

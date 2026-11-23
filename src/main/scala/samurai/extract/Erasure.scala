@@ -53,9 +53,11 @@ final case class ExtractionManifest(
   extractedFunctions: List[String],
   erasedPropositions: List[String],
   verifiedTheorems: List[String],
-  axiomsUsed: Set[String]
+  axiomsUsed: Set[String],
+  partialFunctions: List[String] = Nil
 ) {
   def isAxiomFree: Boolean = axiomsUsed.isEmpty
+  def isTotal: Boolean = partialFunctions.isEmpty
 
   def toJson: Json = Json.obj(
     "extractedTypes" -> Json.Arr(extractedTypes.map(Json.Str(_))),
@@ -63,7 +65,9 @@ final case class ExtractionManifest(
     "erasedPropositions" -> Json.Arr(erasedPropositions.map(Json.Str(_))),
     "verifiedTheorems" -> Json.Arr(verifiedTheorems.map(Json.Str(_))),
     "axiomsUsed" -> Json.Arr(axiomsUsed.toList.sorted.map(Json.Str(_))),
-    "isAxiomFree" -> Json.Bool(isAxiomFree)
+    "partialFunctions" -> Json.Arr(partialFunctions.map(Json.Str(_))),
+    "isAxiomFree" -> Json.Bool(isAxiomFree),
+    "isTotal" -> Json.Bool(isTotal)
   )
 }
 
@@ -86,7 +90,8 @@ object Erasure {
 
   final case class ExtractionOptions(
     moduleName: String = "ExtractedSamurai",
-    requireAxiomFree: Boolean = false
+    requireAxiomFree: Boolean = false,
+    requireTotal: Boolean = false
   )
 
   def extract(
@@ -100,11 +105,17 @@ object Erasure {
         s"Strict extraction rejected: environment uses axiom(s): ${kernelEnv.allAxiomsUsed.toList.sorted.mkString(", ")}"
       )
     }
+    if (options.requireTotal && kernelEnv.allPartialDefs.nonEmpty) {
+      return Left(
+        s"Total extraction rejected: environment contains partial function(s): ${kernelEnv.allPartialDefs.toList.sorted.mkString(", ")}"
+      )
+    }
 
     val dataDecls = List.newBuilder[ExtractedDataDecl]
     val defDecls = List.newBuilder[ExtractedDefDecl]
     val erasedProps = List.newBuilder[String]
     val verifiedTheorems = List.newBuilder[String]
+    val partialFunctions = List.newBuilder[String]
     val allAxioms = Set.newBuilder[String]
 
     // Precompute parameter erasure masks for every inductive and def
@@ -127,9 +138,21 @@ object Erasure {
         }
       }
 
-    // Track for each computational def: which leading binders are type params, which are kept value params
+    // Pass 1: Precompute signature roles for all computational defs (enables mutual forward calls!)
     val defRoles = scala.collection.mutable.Map.empty[String, List[Role]]
+    val defSigCache = scala.collection.mutable.Map.empty[String, (List[Role], Term, LocalCtx)]
+    for (declName <- kernelEnv.declOrder if !elabEnv.noExtractNames.contains(declName)) {
+      kernelEnv.defs.get(declName).foreach { defEntry =>
+        if (!defEntry.isTheorem && !isPropType(kernelEnv, LocalCtx.empty, defEntry.ty) && !isTypeLevelDef(kernelEnv, defEntry.ty)) {
+          val analyzed = analyzeDefSignature(kernelEnv, defEntry.ty, indParamKeepMask)
+          defRoles(defEntry.name) = analyzed._1
+          defSigCache(defEntry.name) = analyzed
+        }
+      }
+    }
+    val defRolesMap = defRoles.toMap
 
+    // Pass 2: Extract data types and function bodies
     for (declName <- kernelEnv.declOrder if !elabEnv.noExtractNames.contains(declName)) {
       kernelEnv.inductives.get(declName) match {
         case Some(ind) =>
@@ -167,17 +190,17 @@ object Erasure {
             if (defEntry.isTheorem || isPropType(kernelEnv, LocalCtx.empty, defEntry.ty) || isTypeLevelDef(kernelEnv, defEntry.ty)) {
               verifiedTheorems += defEntry.name
             } else {
-              // Split leading Pi binders of defEntry.ty
-              val (roles, returnTypeCore, innerCtx) = analyzeDefSignature(kernelEnv, defEntry.ty, indParamKeepMask)
-              defRoles(defEntry.name) = roles
-
+              if (defEntry.isPartial) {
+                partialFunctions += defEntry.name
+              }
+              val (roles, returnTypeCore, innerCtx) = defSigCache(defEntry.name)
               val typeParams = roles.collect { case Role.TParam(n) => n }
               val valueParams = roles.collect { case Role.VParam(n, t) => (n, t) }
               val retType = eraseType(kernelEnv, innerCtx, returnTypeCore, indParamKeepMask)
 
-              // Peel Fix / Lam matching the signature binders
-              val (bodyCore, ctxForBody, selfNameOpt) = peelDefBody(defEntry.name, defEntry.body, roles.length, innerCtx)
-              val eraseEnv = buildEraseNameEnv(roles, selfNameOpt)
+              // Peel Fix / MutualFix / Lam matching the signature binders
+              val (bodyCore, ctxForBody, selfNames) = peelDefBody(defEntry.name, defEntry.body, roles.length, innerCtx)
+              val eraseEnv = buildEraseNameEnv(roles, selfNames)
               val extractedBody = eraseTerm(
                 kernelEnv,
                 ctxForBody,
@@ -185,7 +208,7 @@ object Erasure {
                 eraseEnv,
                 indParamKeepMask,
                 ctorFieldKeepMask,
-                defRoles.toMap
+                defRolesMap
               )
 
               defDecls += ExtractedDefDecl(
@@ -207,7 +230,8 @@ object Erasure {
       extractedFunctions = finalDefs.map(_.name),
       erasedPropositions = erasedProps.result(),
       verifiedTheorems = verifiedTheorems.result(),
-      axiomsUsed = allAxioms.result() ++ kernelEnv.allAxiomsUsed
+      axiomsUsed = allAxioms.result() ++ kernelEnv.allAxiomsUsed,
+      partialFunctions = partialFunctions.result()
     )
 
     Right(ExtractedModule(options.moduleName, finalData, finalDefs, manifest))
@@ -283,12 +307,17 @@ object Erasure {
     body: Term,
     numBinders: Int,
     sigCtx: LocalCtx
-  ): (Term, LocalCtx, Option[String]) = {
-    val (unwrapped, selfOpt, baseCtx) = body match {
+  ): (Term, LocalCtx, List[String]) = {
+    val (unwrapped, selfNames, baseCtx) = body match {
       case Term.Fix(fixName, _, fixTy, inner) =>
-        (inner, Some(defName), LocalCtx.empty.push(fixName, fixTy))
+        (inner, List(defName), LocalCtx.empty.push(fixName, fixTy))
+      case Term.MutualFix(defs, sel) =>
+        val mutualCtx = defs.zipWithIndex.foldLeft(LocalCtx.empty) { case (ctxAcc, (d, j)) =>
+          ctxAcc.push(d.name, Term.shift(d.ty, j))
+        }
+        (defs(sel).body, defs.map(_.name), mutualCtx)
       case other =>
-        (other, None, LocalCtx.empty)
+        (other, Nil, LocalCtx.empty)
     }
 
     var cur = unwrapped
@@ -309,11 +338,12 @@ object Erasure {
           remaining = 0
       }
     }
-    (cur, ctx, selfOpt)
+    (cur, ctx, selfNames)
   }
 
-  private def buildEraseNameEnv(roles: List[Role], selfNameOpt: Option[String]): List[Option[String]] = {
-    val base: List[Option[String]] = selfNameOpt.map(Some(_)).toList
+  private def buildEraseNameEnv(roles: List[Role], selfNames: List[String]): List[Option[String]] = {
+    // Push selfNames left-to-right so the last mutual def is innermost (matching LocalCtx)
+    val base: List[Option[String]] = selfNames.foldLeft(List.empty[Option[String]])((acc, n) => Some(n) :: acc)
     roles.foldLeft(base) { (env, role) =>
       role match {
         case Role.VParam(n, _) => Some(n) :: env
@@ -447,6 +477,13 @@ object Erasure {
             val selfName = nameEnv(idx).get
             applyWithRoles(kernelEnv, localCtx, ExtractedExpr.EVar(selfName), Some(selfName), args, defRoles(selfName), nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
 
+          case Term.Fix(fixName, _, _, _) if defRoles.contains(fixName) =>
+            applyWithRoles(kernelEnv, localCtx, ExtractedExpr.EConst(fixName, Nil), Some(fixName), args, defRoles(fixName), nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+
+          case Term.MutualFix(defs, sel) if sel >= 0 && sel < defs.length && defRoles.contains(defs(sel).name) =>
+            val fnName = defs(sel).name
+            applyWithRoles(kernelEnv, localCtx, ExtractedExpr.EConst(fnName, Nil), Some(fnName), args, defRoles(fnName), nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+
           case _ =>
             val eHead = eraseTerm(kernelEnv, localCtx, head, nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
             args.foldLeft(eHead) { (acc, arg) =>
@@ -466,14 +503,64 @@ object Erasure {
               case Nil =>
                 ExtractedExpr.EUnreachable(s"eliminated empty Prop '$indName'")
               case List(singleBranch) =>
-                // Eq.Refl / True.Intro / And.Intro -> erase scrutinee and evaluate branch directly!
+                // Eq.Refl / True.Intro / And.Intro / Acc.Intro -> erase scrutinee and evaluate branch directly!
+                // Any non-Prop field forced by a result index (e.g. `current` in Acc.Intro) is bound via ELet
+                // to the corresponding actual index of the scrutinee's type!
                 val ctor = ind.constructors.head
                 val instFields = ind.instantiateFields(ctor, params)
                 val branchCtx = instFields.zip(singleBranch.fieldNames).foldLeft(localCtx) { case (c, (b, n)) =>
                   c.push(n, b.ty)
                 }
-                val branchNameEnv = List.fill(singleBranch.arity)(None) ++ nameEnv
-                eraseTerm(kernelEnv, branchCtx, singleBranch.body, branchNameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+
+                // Extract actual index terms from scrutinee's type if needed for index-forced fields
+                val scrutActualIndices: List[Term] =
+                  if (ind.numIndices > 0) {
+                    TypeChecker.infer(kernelEnv, localCtx, scrutinee).toOption match {
+                      case Some(scrutTy) =>
+                        val fuel = new NbE.Fuel()
+                        val evalEnv = NbE.buildEvalEnv(kernelEnv, localCtx, fuel)
+                        NbE.evaluate(kernelEnv, evalEnv, scrutTy, fuel) match {
+                          case Value.VInd(_, allArgs) =>
+                            allArgs.drop(ind.numParams).map(NbE.quote(kernelEnv, localCtx.depth, _, fuel))
+                          case _ => Nil
+                        }
+                      case None => Nil
+                    }
+                  } else Nil
+
+                val numFields = ctor.arity
+                val indexLetBindings = List.newBuilder[(String, ExtractedExpr)]
+                val branchNameEnv = singleBranch.fieldNames.zipWithIndex.foldLeft(nameEnv) {
+                  case (envAcc, (fieldName, fieldIdx)) =>
+                    val isPropField = fieldIdx < ctor.fieldIsProp.length && ctor.fieldIsProp(fieldIdx)
+                    if (isPropField) {
+                      None :: envAcc
+                    } else {
+                      val fieldVar = Term.Var(numFields - 1 - fieldIdx)
+                      val idxPos = ctor.resultIndices.indexOf(fieldVar)
+                      if (idxPos >= 0 && idxPos < scrutActualIndices.length) {
+                        val safeName = if (fieldName == "_" || fieldName.isEmpty) s"_idx$fieldIdx" else fieldName
+                        val eIdxVal = eraseTerm(
+                          kernelEnv,
+                          localCtx,
+                          scrutActualIndices(idxPos),
+                          nameEnv,
+                          indParamKeepMask,
+                          ctorFieldKeepMask,
+                          defRoles
+                        )
+                        indexLetBindings += (safeName -> eIdxVal)
+                        Some(safeName) :: envAcc
+                      } else {
+                        None :: envAcc
+                      }
+                    }
+                }
+                val innerErased = eraseTerm(kernelEnv, branchCtx, singleBranch.body, branchNameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+                indexLetBindings.result().foldRight(innerErased) { case ((bindName, bindVal), acc) =>
+                  if (exprMentionsVar(acc, bindName)) ExtractedExpr.ELet(bindName, bindVal, acc)
+                  else acc
+                }
               case _ =>
                 ExtractedExpr.EUnreachable(s"unexpected multi-branch Prop match on '$indName'")
             }
@@ -522,11 +609,32 @@ object Erasure {
           case None => ExtractedExpr.EUnit
         }
 
-      case Term.Fix(_, _, _, body) =>
-        eraseTerm(kernelEnv, localCtx, body, None :: nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+      case Term.Fix(fixName, _, _, body) =>
+        if (defRoles.contains(fixName)) ExtractedExpr.EConst(fixName, Nil)
+        else eraseTerm(kernelEnv, localCtx, body, None :: nameEnv, indParamKeepMask, ctorFieldKeepMask, defRoles)
+
+      case Term.MutualFix(defs, sel) =>
+        if (sel >= 0 && sel < defs.length && defRoles.contains(defs(sel).name)) ExtractedExpr.EConst(defs(sel).name, Nil)
+        else {
+          val padded = defs.foldLeft(nameEnv)((acc, d) => Some(d.name) :: acc)
+          eraseTerm(kernelEnv, localCtx, defs(sel).body, padded, indParamKeepMask, ctorFieldKeepMask, defRoles)
+        }
 
       case Term.Pi(_, _, _) => ExtractedExpr.EUnit
     }
+  }
+
+  private def exprMentionsVar(expr: ExtractedExpr, target: String): Boolean = expr match {
+    case ExtractedExpr.EUnit | ExtractedExpr.EUnreachable(_) | ExtractedExpr.EConst(_, _) => false
+    case ExtractedExpr.EVar(name) => name == target
+    case ExtractedExpr.ECtor(_, _, _, args) => args.exists(exprMentionsVar(_, target))
+    case ExtractedExpr.ELam(p, _, body) => p != target && exprMentionsVar(body, target)
+    case ExtractedExpr.EApp(c, a) => exprMentionsVar(c, target) || exprMentionsVar(a, target)
+    case ExtractedExpr.ELet(n, v, b) => exprMentionsVar(v, target) || (n != target && exprMentionsVar(b, target))
+    case ExtractedExpr.EMatch(_, scrut, branches) =>
+      exprMentionsVar(scrut, target) || branches.exists { case (_, fields, body) =>
+        !fields.contains(target) && exprMentionsVar(body, target)
+      }
   }
 
   private def applyWithRoles(

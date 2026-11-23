@@ -408,4 +408,95 @@ class KernelSoundnessSuite extends FunSuite {
     val checked = TypeChecker.checkDef(env, "subsetProofIrrel", thmType, thmBody, isTheorem = true)
     assert(checked.isRight, s"Definitional proof irrelevance for Subset failed: $checked")
   }
+
+  test("MutualFix rejects non-decreasing mutual loop (K020) and half-decreasing mutual loop (K020)") {
+    val env = preludeEnv
+    val nat = Term.Ind("Nat")
+    val falseTy = Term.Ind("False")
+    val fnTy = Term.Pi("n", nat, falseTy)
+
+    // mutual { def loopA(n: Nat): False = loopB(n); def loopB(n: Nat): False = loopA(n) }
+    // Under [loopA (idx 2), loopB (idx 1), n (idx 0)]:
+    val bodyA = Term.Lam("n", nat, Term.App(Term.Var(1), Term.Var(0)))
+    val bodyB = Term.Lam("n", nat, Term.App(Term.Var(2), Term.Var(0)))
+    val badMutual = Term.MutualFix(
+      List(MutualFixDef("loopA", 0, fnTy, bodyA), MutualFixDef("loopB", 0, fnTy, bodyB)),
+      selectedIndex = 0
+    )
+    val res1 = TypeChecker.infer(env, LocalCtx.empty, badMutual)
+    assert(res1.isLeft, "Non-decreasing mutual loop must be rejected")
+    assertEquals(res1.left.toOption.get.code, "K020")
+
+    // Half-decreasing: loopA decreases on Nat, but loopB calls loopA(n) without decreasing!
+    val decBodyA = Term.Lam(
+      "n",
+      nat,
+      Term.Match(
+        "Nat",
+        Nil,
+        Term.Lam("_", nat, falseTy),
+        Term.Var(0),
+        List(
+          MatchBranch("Zero", Nil, Term.App(Term.Var(1), Term.Ctor("Nat", "Zero"))),
+          MatchBranch("Succ", List("p"), Term.App(Term.Var(2), Term.Var(0)))
+        )
+      )
+    )
+    val halfBad = Term.MutualFix(
+      List(MutualFixDef("loopA", 0, fnTy, decBodyA), MutualFixDef("loopB", 0, fnTy, bodyB)),
+      selectedIndex = 0
+    )
+    val res2 = TypeChecker.infer(env, LocalCtx.empty, halfBad)
+    assert(res2.isLeft, "Half-decreasing mutual loop must be rejected")
+    assertEquals(res2.left.toOption.get.code, "K020")
+  }
+
+  test("partial def soundness: rejects Prop return type (K030) and isolates partial defs from total code (K031)") {
+    var env = preludeEnv
+    val nat = Term.Ind("Nat")
+    val falseTy = Term.Ind("False")
+
+    // 1. partial def badProp(n: Nat): False = badProp(n) -> MUST be rejected with K030!
+    val badPropRes = TypeChecker.checkDef(
+      env,
+      "badProp",
+      Term.Pi("n", nat, falseTy),
+      Term.Lam("n", nat, Term.App(Term.Const("badProp"), Term.Var(0))),
+      transparent = false,
+      isTheorem = false,
+      isPartial = true
+    )
+    assert(badPropRes.isLeft, "partial def returning Prop must be rejected")
+    assertEquals(badPropRes.left.toOption.get.code, "K030")
+
+    // 2. partial def spin(n: Nat): Nat = spin(n) -> accepted (in Type, opaque in NbE)
+    val spinTy = Term.Pi("n", nat, nat)
+    val spinBody = Term.Lam("n", nat, Term.App(Term.Const("spin"), Term.Var(0)))
+    env = unwrap(TypeChecker.checkDef(env, "spin", spinTy, spinBody, transparent = false, isPartial = true))
+    assert(env.allPartialDefs.contains("spin"))
+
+    // 3. NbE does NOT unfold `spin(0)` during type checking (terminates immediately!)
+    val normSpin = NbE.normalize(env, LocalCtx.empty, Term.App(Term.Const("spin"), Term.Ctor("Nat", "Zero")))
+    assertEquals(normSpin, Term.App(Term.Const("spin"), Term.Ctor("Nat", "Zero")))
+
+    // 4. Total def calling `spin` MUST be rejected with K031!
+    val totalCaller = TypeChecker.checkDef(
+      env,
+      "leakTotal",
+      spinTy,
+      Term.Lam("n", nat, Term.App(Term.Const("spin"), Term.Var(0))),
+      transparent = true,
+      isTheorem = false,
+      isPartial = false
+    )
+    assert(totalCaller.isLeft, "Total def referencing partial def must be rejected")
+    assertEquals(totalCaller.left.toOption.get.code, "K031")
+
+    // 5. Theorem mentioning `spin` MUST be rejected with K031!
+    val thmTy = Term.apps(Term.Ind("Eq"), List(nat, Term.App(Term.Const("spin"), Term.Ctor("Nat", "Zero")), Term.App(Term.Const("spin"), Term.Ctor("Nat", "Zero"))))
+    val thmBody = Term.apps(Term.Ctor("Eq", "Refl"), List(nat, Term.App(Term.Const("spin"), Term.Ctor("Nat", "Zero"))))
+    val theoremCaller = TypeChecker.checkDef(env, "leakThm", thmTy, thmBody, transparent = false, isTheorem = true, isPartial = false)
+    assert(theoremCaller.isLeft, "Theorem referencing partial def must be rejected")
+    assertEquals(theoremCaller.left.toOption.get.code, "K031")
+  }
 }

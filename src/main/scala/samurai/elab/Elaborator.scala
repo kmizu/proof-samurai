@@ -45,6 +45,18 @@ final case class DirectiveResult(
   )
 }
 
+final case class WfContext(
+  fnName: String,
+  wfHelperName: String,
+  numBinders: Int,
+  measureCore: Term, // in depth = numBinders (binders 0..numBinders-1)
+  wfSelfLevel: Int,
+  wfCurMeasureLevel: Int,
+  wfInvLevel: Int,
+  wfEqMLevel: Int,
+  decreasingBy: Option[List[TacticStmt]]
+)
+
 /**
  * Rich surface-level elaboration environment backed by the immutable Trusted KernelEnv.
  */
@@ -55,12 +67,15 @@ final case class ElabEnv(
   recordFields: Map[String, List[String]] = Map.empty,
   simpLemmas: List[String] = Nil,
   hintLemmas: List[String] = Nil,
+  wfHints: List[String] = Nil,
   noExtractNames: Set[String] = Set.empty,
   loadedModules: Set[String] = Set.empty,
   searchPaths: List[Path] = Nil,
   holes: List[HoleInfo] = Nil,
   directives: List[DirectiveResult] = Nil,
-  holeCollectionMode: Boolean = false
+  holeCollectionMode: Boolean = false,
+  localRecursiveNames: Set[String] = Set.empty,
+  wfContext: Option[WfContext] = None
 ) {
   def withSearchPaths(paths: List[Path]): ElabEnv = copy(searchPaths = paths)
 
@@ -166,6 +181,9 @@ object Elaborator {
 
     case defDecl: TopDecl.DefDecl =>
       elaborateDef(env, defDecl)
+
+    case mutualDecl: TopDecl.MutualDecl =>
+      elaborateMutual(env, mutualDecl)
 
     case valDecl: TopDecl.ValDecl =>
       elaborateVal(env, valDecl)
@@ -361,6 +379,16 @@ object Elaborator {
   // ===========================================================================
 
   private def elaborateDef(env: ElabEnv, decl: TopDecl.DefDecl): Either[Diagnostic, ElabEnv] = {
+    if (decl.isPartial && decl.isTheorem) {
+      return Left(Diagnostic(Diagnostic.Severity.Error, "E016", s"Theorem '${decl.name}' cannot be declared partial", decl.span))
+    }
+    if (decl.isPartial && decl.terminationBy.isDefined) {
+      return Left(Diagnostic(Diagnostic.Severity.Error, "E016", s"Partial function '${decl.name}' does not need a termination_by clause", decl.span))
+    }
+    if (decl.terminationBy.isDefined) {
+      return elaborateWellFoundedDef(env, decl)
+    }
+
     boundary {
       val metaCtx = new MetaContext()
       var localCtx = LocalCtx.empty
@@ -405,101 +433,133 @@ object Elaborator {
             case Left(err) => break(Left(err))
             case Right(t)  => metaCtx.zonk(t, localCtx.depth)
           }
-        case None if isRecursive =>
-          break(Left(Diagnostic(Diagnostic.Severity.Error, "E011", s"Recursive function '${decl.name}' requires an explicit return type", decl.span)))
+        case None if isRecursive || decl.isPartial =>
+          break(Left(Diagnostic(Diagnostic.Severity.Error, "E011", s"Recursive/partial function '${decl.name}' requires an explicit return type", decl.span)))
         case None =>
           metaCtx.freshMeta(localCtx.depth, Term.USort(Sort.Type(0)), Some("returnType"))
       }
 
       val fullTypeRaw = Term.pis(binders, returnTypeCore)
 
-      // 4. Elaborate body (tactic block or functional term)
+      // 4. Elaborate body (partial def, tactic block, non-recursive, or structural Fix)
       var currentEnv = env
-      val finalBodyTerm: Term = decl.body match {
-        case SurfaceExpr.TacticBlockExpr(tactics, tacticSpan) =>
-          val initState = ProofState.initial(localCtx, returnTypeCore, label = decl.name)
-          Tactics.runScript(currentEnv, initState, tactics) match {
-            case Left(err) => break(Left(err))
-            case Right((nextEnv, finalState)) =>
-              currentEnv = nextEnv
-              if (!finalState.isSolved) {
-                val goalsText = finalState.openGoals.map(_.formatHuman(currentEnv.kernelEnv)).mkString("\n")
-                break(
-                  Left(
-                    Diagnostic(
-                      Diagnostic.Severity.Error,
-                      "E020",
-                      s"Incomplete proof for '${decl.name}': ${finalState.openGoals.length} unsolved goal(s)\n$goalsText",
-                      tacticSpan
-                    )
-                  )
-                )
-              }
-              finalState.buildProofTerm match {
-                case Left(msg) =>
-                  break(Left(Diagnostic(Diagnostic.Severity.Error, "E021", msg, tacticSpan)))
-                case Right(proofBody) =>
-                  Term.lams(binders, proofBody)
-              }
-          }
-
-        case bodyExpr if !isRecursive =>
-          val (elabBody, envAfterBody) = checkExpr(currentEnv, metaCtx, localCtx, bodyExpr, returnTypeCore) match {
+      val finalBodyTerm: Term =
+        if (decl.isPartial) {
+          val fullTypeZonked = metaCtx.zonk(fullTypeRaw, 0)
+          val tentativeSelf = DefEntry(
+            name = decl.name,
+            ty = fullTypeZonked,
+            body = Term.Const(decl.name),
+            transparent = false,
+            isTheorem = false,
+            axiomsUsed = Set.empty,
+            isPartial = true
+          )
+          val envWithSelf = currentEnv.copy(
+            kernelEnv = currentEnv.kernelEnv.addDef(tentativeSelf),
+            implicitParamCounts = currentEnv.implicitParamCounts + (decl.name -> decl.typeParams.length)
+          )
+          val (elabBody, envAfterBody) = checkExpr(envWithSelf, metaCtx, localCtx, decl.body, returnTypeCore) match {
             case Left(err)  => break(Left(err))
             case Right(res) => res
           }
-          currentEnv = envAfterBody
+          currentEnv = currentEnv.copy(
+            holes = envAfterBody.holes,
+            directives = envAfterBody.directives
+          )
           val zonkedBody = metaCtx.zonk(elabBody, localCtx.depth)
           checkAllMetasSolved(metaCtx, decl.span) match {
             case Left(err) => break(Left(err))
             case Right(()) => ()
           }
           Term.lams(binders, zonkedBody)
+        } else decl.body match {
+          case SurfaceExpr.TacticBlockExpr(tactics, tacticSpan) =>
+            val initState = ProofState.initial(localCtx, returnTypeCore, label = decl.name)
+            Tactics.runScript(currentEnv, initState, tactics) match {
+              case Left(err) => break(Left(err))
+              case Right((nextEnv, finalState)) =>
+                currentEnv = nextEnv
+                if (!finalState.isSolved) {
+                  val goalsText = finalState.openGoals.map(_.formatHuman(currentEnv.kernelEnv)).mkString("\n")
+                  break(
+                    Left(
+                      Diagnostic(
+                        Diagnostic.Severity.Error,
+                        "E020",
+                        s"Incomplete proof for '${decl.name}': ${finalState.openGoals.length} unsolved goal(s)\n$goalsText",
+                        tacticSpan
+                      )
+                    )
+                  )
+                }
+                finalState.buildProofTerm match {
+                  case Left(msg) =>
+                    break(Left(Diagnostic(Diagnostic.Severity.Error, "E021", msg, tacticSpan)))
+                  case Right(proofBody) =>
+                    Term.lams(binders, proofBody)
+                }
+            }
 
-        case bodyExpr =>
-          // Recursive definition: bind self at outermost level inside Fix!
-          val envWithSelfMeta = currentEnv.copy(
-            implicitParamCounts = currentEnv.implicitParamCounts + (decl.name -> decl.typeParams.length)
-          )
-          val shiftedBinders = binders.zipWithIndex.map { case (b, i) =>
-            Binder(b.name, Term.shift(b.ty, 1, i))
-          }
-          val shiftedReturn = Term.shift(returnTypeCore, 1, binders.length)
-          var recCtx = LocalCtx.empty.push(decl.name, fullTypeRaw)
-          for (b <- shiftedBinders) recCtx = recCtx.push(b.name, b.ty)
+          case bodyExpr if !isRecursive =>
+            val (elabBody, envAfterBody) = checkExpr(currentEnv, metaCtx, localCtx, bodyExpr, returnTypeCore) match {
+              case Left(err)  => break(Left(err))
+              case Right(res) => res
+            }
+            currentEnv = envAfterBody
+            val zonkedBody = metaCtx.zonk(elabBody, localCtx.depth)
+            checkAllMetasSolved(metaCtx, decl.span) match {
+              case Left(err) => break(Left(err))
+              case Right(()) => ()
+            }
+            Term.lams(binders, zonkedBody)
 
-          val (elabBody, envAfterBody) = checkExpr(envWithSelfMeta, metaCtx, recCtx, bodyExpr, shiftedReturn) match {
-            case Left(err)  => break(Left(err))
-            case Right(res) => res
-          }
-          currentEnv = envAfterBody
-          val zonkedBody = metaCtx.zonk(elabBody, recCtx.depth)
-          checkAllMetasSolved(metaCtx, decl.span) match {
-            case Left(err) => break(Left(err))
-            case Right(()) => ()
-          }
-          val lambdaUnderFix = Term.lams(shiftedBinders, zonkedBody)
-          val fullTypeZonked = metaCtx.zonk(fullTypeRaw, 0)
+          case bodyExpr =>
+            // Recursive definition: bind self at outermost level inside Fix!
+            val envWithSelfMeta = currentEnv.copy(
+              implicitParamCounts = currentEnv.implicitParamCounts + (decl.name -> decl.typeParams.length),
+              localRecursiveNames = currentEnv.localRecursiveNames + decl.name
+            )
+            val shiftedBinders = binders.zipWithIndex.map { case (b, i) =>
+              Binder(b.name, Term.shift(b.ty, 1, i))
+            }
+            val shiftedReturn = Term.shift(returnTypeCore, 1, binders.length)
+            var recCtx = LocalCtx.empty.push(decl.name, fullTypeRaw)
+            for (b <- shiftedBinders) recCtx = recCtx.push(b.name, b.ty)
 
-          // Select decreasing parameter index (explicit @decreasing or automatic detection!)
-          val chosenRecIdx = chooseDecreasingArgIndex(currentEnv.kernelEnv, decl, binders, fullTypeZonked, lambdaUnderFix) match {
-            case Left(err)  => break(Left(err))
-            case Right(idx) => idx
-          }
-          Term.Fix(decl.name, chosenRecIdx, fullTypeZonked, lambdaUnderFix)
-      }
+            val (elabBody, envAfterBody) = checkExpr(envWithSelfMeta, metaCtx, recCtx, bodyExpr, shiftedReturn) match {
+              case Left(err)  => break(Left(err))
+              case Right(res) => res
+            }
+            currentEnv = envAfterBody.copy(localRecursiveNames = currentEnv.localRecursiveNames)
+            val zonkedBody = metaCtx.zonk(elabBody, recCtx.depth)
+            checkAllMetasSolved(metaCtx, decl.span) match {
+              case Left(err) => break(Left(err))
+              case Right(()) => ()
+            }
+            val lambdaUnderFix = Term.lams(shiftedBinders, zonkedBody)
+            val fullTypeZonked = metaCtx.zonk(fullTypeRaw, 0)
+
+            // Select decreasing parameter index (explicit @decreasing or automatic detection!)
+            val chosenRecIdx = chooseDecreasingArgIndex(currentEnv.kernelEnv, decl, binders, fullTypeZonked, lambdaUnderFix) match {
+              case Left(err)  => break(Left(err))
+              case Right(idx) => idx
+            }
+            Term.Fix(decl.name, chosenRecIdx, fullTypeZonked, lambdaUnderFix)
+        }
 
       val fullTypeFinal = metaCtx.zonk(fullTypeRaw, 0)
 
       // 5. Verify completely from scratch with the Trusted Kernel!
-      val isOpaque = decl.annotations.exists(_.name == "opaque") || decl.isTheorem
+      val isOpaque = decl.annotations.exists(_.name == "opaque") || decl.isTheorem || decl.isPartial
       TypeChecker.checkDef(
         currentEnv.kernelEnv,
         decl.name,
         fullTypeFinal,
         finalBodyTerm,
         transparent = !isOpaque,
-        isTheorem = decl.isTheorem
+        isTheorem = decl.isTheorem,
+        isPartial = decl.isPartial
       ) match {
         case Left(kErr) =>
           Left(Diagnostic(Diagnostic.Severity.Error, kErr.code, kErr.message, decl.span))
@@ -514,12 +574,650 @@ object Elaborator {
           if (decl.annotations.exists(_.name == "hint")) {
             updated = updated.copy(hintLemmas = decl.name :: updated.hintLemmas)
           }
+          if (decl.annotations.exists(_.name == "wf")) {
+            updated = updated.copy(wfHints = decl.name :: updated.wfHints)
+          }
           if (decl.annotations.exists(_.name == "noextract")) {
             updated = updated.copy(noExtractNames = updated.noExtractNames + decl.name)
           }
           Right(updated)
       }
     }
+  }
+
+  // ===========================================================================
+  // Mutual Recursion (`mutual { def ...; def ... }`)
+  // ===========================================================================
+
+  private def elaborateMutual(env: ElabEnv, decl: TopDecl.MutualDecl): Either[Diagnostic, ElabEnv] = boundary {
+    val defs = decl.declarations
+    if (defs.isEmpty) {
+      break(Left(Diagnostic(Diagnostic.Severity.Error, "E017", "'mutual' block cannot be empty", decl.span)))
+    }
+    val anyPartial = defs.exists(_.isPartial)
+    val allPartial = defs.forall(_.isPartial)
+    if (anyPartial && !allPartial) {
+      break(
+        Left(
+          Diagnostic(
+            Diagnostic.Severity.Error,
+            "E017",
+            "Cannot mix total 'def' and 'partial def' inside the same 'mutual' block",
+            decl.span
+          )
+        )
+      )
+    }
+    if (defs.exists(_.terminationBy.isDefined)) {
+      break(
+        Left(
+          Diagnostic(
+            Diagnostic.Severity.Error,
+            "E017",
+            "'termination_by' is not supported inside 'mutual' blocks; use structural recursion or 'partial def'",
+            decl.span
+          )
+        )
+      )
+    }
+
+    // 1. Elaborate signatures for all declarations in the mutual block
+    final case class SigInfo(
+      decl: TopDecl.DefDecl,
+      binders: List[Binder],
+      returnTypeCore: Term,
+      fullType: Term,
+      localCtx: LocalCtx
+    )
+    val sigs = List.newBuilder[SigInfo]
+    for (d <- defs) {
+      val metaCtx = new MetaContext()
+      var localCtx = LocalCtx.empty
+      val allBinders = List.newBuilder[Binder]
+      for (tp <- d.typeParams) {
+        val paramType = tp.typeAnnotation match {
+          case Some(ann) =>
+            elaborateType(env, metaCtx, localCtx, ann) match {
+              case Left(err) => break(Left(err))
+              case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+            }
+          case None => Term.USort(Sort.Type(0))
+        }
+        allBinders += Binder(tp.name, paramType)
+        localCtx = localCtx.push(tp.name, paramType)
+      }
+      for (vp <- d.valueParams) {
+        val paramType = vp.typeAnnotation match {
+          case Some(ann) =>
+            elaborateType(env, metaCtx, localCtx, ann) match {
+              case Left(err) => break(Left(err))
+              case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+            }
+          case None =>
+            break(Left(Diagnostic(Diagnostic.Severity.Error, "E010", s"Parameter '${vp.name}' in '${d.name}' requires a type annotation", vp.span)))
+        }
+        allBinders += Binder(vp.name, paramType)
+        localCtx = localCtx.push(vp.name, paramType)
+      }
+      val returnTypeCore = d.returnType match {
+        case Some(retExpr) =>
+          elaborateType(env, metaCtx, localCtx, retExpr) match {
+            case Left(err) => break(Left(err))
+            case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+          }
+        case None =>
+          break(Left(Diagnostic(Diagnostic.Severity.Error, "E011", s"Mutually recursive function '${d.name}' requires an explicit return type", d.span)))
+      }
+      val bindersList = allBinders.result()
+      val fullType = metaCtx.zonk(Term.pis(bindersList, returnTypeCore), 0)
+      sigs += SigInfo(d, bindersList, returnTypeCore, fullType, localCtx)
+    }
+    val sigList = sigs.result()
+    val implicitUpdates = sigList.map(s => s.decl.name -> s.decl.typeParams.length).toMap
+
+    if (allPartial) {
+      // Mutually recursive partial defs: register all as tentative opaque partial constants, check bodies, commit.
+      var tentativeKernel = env.kernelEnv
+      for (s <- sigList) {
+        tentativeKernel = tentativeKernel.addDef(
+          DefEntry(s.decl.name, s.fullType, Term.Const(s.decl.name), transparent = false, isTheorem = false, axiomsUsed = Set.empty, isPartial = true)
+        )
+      }
+      val envForBodies = env.copy(
+        kernelEnv = tentativeKernel,
+        implicitParamCounts = env.implicitParamCounts ++ implicitUpdates
+      )
+      var collectedHoles = env.holes
+      var collectedDirectives = env.directives
+      val checkedEntries = List.newBuilder[(String, Term, Term)]
+      for (s <- sigList) {
+        val metaCtx = new MetaContext()
+        val (elabBody, envAfter) = checkExpr(envForBodies, metaCtx, s.localCtx, s.decl.body, s.returnTypeCore) match {
+          case Left(err)  => break(Left(err))
+          case Right(res) => res
+        }
+        collectedHoles = envAfter.holes
+        collectedDirectives = envAfter.directives
+        val zonkedBody = metaCtx.zonk(elabBody, s.localCtx.depth)
+        checkAllMetasSolved(metaCtx, s.decl.span) match {
+          case Left(err) => break(Left(err))
+          case Right(()) => ()
+        }
+        checkedEntries += ((s.decl.name, s.fullType, Term.lams(s.binders, zonkedBody)))
+      }
+      TypeChecker.checkMutualPartialDefs(env.kernelEnv, checkedEntries.result()) match {
+        case Left(kErr) =>
+          break(Left(Diagnostic(Diagnostic.Severity.Error, kErr.code, kErr.message, decl.span)))
+        case Right(checkedKernel) =>
+          var updated = env.copy(
+            kernelEnv = checkedKernel,
+            implicitParamCounts = env.implicitParamCounts ++ implicitUpdates,
+            holes = collectedHoles,
+            directives = collectedDirectives
+          )
+          for (s <- sigList) {
+            if (s.decl.annotations.exists(_.name == "noextract")) {
+              updated = updated.copy(noExtractNames = updated.noExtractNames + s.decl.name)
+            }
+          }
+          break(Right(updated))
+      }
+    }
+
+    // Total mutually recursive block -> Term.MutualFix
+    val k = sigList.length
+    val mutualNames = sigList.map(_.decl.name).toSet
+    val envForBodies = env.copy(
+      implicitParamCounts = env.implicitParamCounts ++ implicitUpdates,
+      localRecursiveNames = env.localRecursiveNames ++ mutualNames
+    )
+
+    // Base mutual context has d_0, d_1, ..., d_{k-1} pushed (d_j's type shifted by +j)
+    val baseMutualCtx = sigList.zipWithIndex.foldLeft(LocalCtx.empty) { case (ctxAcc, (s, j)) =>
+      ctxAcc.push(s.decl.name, Term.shift(s.fullType, j))
+    }
+
+    var currentEnv = env
+    val rawLambdas = List.newBuilder[Term]
+    for (s <- sigList) {
+      val metaCtx = new MetaContext()
+      val shiftedBinders = s.binders.zipWithIndex.map { case (b, i) =>
+        Binder(b.name, Term.shift(b.ty, k, i))
+      }
+      val shiftedReturn = Term.shift(s.returnTypeCore, k, s.binders.length)
+      val recCtx = shiftedBinders.foldLeft(baseMutualCtx)((ctxAcc, b) => ctxAcc.push(b.name, b.ty))
+      val (elabBody, envAfter) = checkExpr(envForBodies, metaCtx, recCtx, s.decl.body, shiftedReturn) match {
+        case Left(err)  => break(Left(err))
+        case Right(res) => res
+      }
+      currentEnv = currentEnv.copy(holes = envAfter.holes, directives = envAfter.directives)
+      val zonkedBody = metaCtx.zonk(elabBody, recCtx.depth)
+      checkAllMetasSolved(metaCtx, s.decl.span) match {
+        case Left(err) => break(Left(err))
+        case Right(()) => ()
+      }
+      rawLambdas += Term.lams(shiftedBinders, zonkedBody)
+    }
+    val lambdaList = rawLambdas.result()
+
+    // Choose decreasing parameter index for each mutual function (explicit @decreasing or automatic search)
+    val candidateLists: List[List[Int]] = sigList.map { s =>
+      s.decl.annotations.find(_.name == "decreasing") match {
+        case Some(ann) =>
+          ann.args.headOption match {
+            case Some(SurfaceExpr.IntLitExpr(i, _)) => List(i)
+            case Some(SurfaceExpr.VarExpr(paramName, _)) =>
+              val idx = s.binders.indexWhere(_.name == paramName)
+              if (idx >= 0) List(idx) else Nil
+            case _ => Nil
+          }
+        case None =>
+          s.binders.zipWithIndex.collect {
+            case (b, idx) if isInductiveHead(currentEnv.kernelEnv, b.ty) => idx
+          }
+      }
+    }
+
+    // Generate Cartesian product of candidate decreasing indices (usually tiny: 1-2 candidates per function)
+    def cartesian(lists: List[List[Int]]): List[List[Int]] = lists match {
+      case Nil          => List(Nil)
+      case head :: tail => for (h <- head; t <- cartesian(tail)) yield h :: t
+    }
+    val tuples = cartesian(candidateLists)
+    var chosenMutualDefs: Option[List[MutualFixDef]] = None
+    var lastError = "No valid decreasing inductive parameter combination found"
+    for (tuple <- tuples if chosenMutualDefs.isEmpty) {
+      val defsCandidate = sigList.zip(lambdaList).zip(tuple).map { case ((s, lam), recIdx) =>
+        MutualFixDef(s.decl.name, recIdx, s.fullType, lam)
+      }
+      Termination.checkMutualFix(currentEnv.kernelEnv, LocalCtx.empty, defsCandidate) match {
+        case Right(()) => chosenMutualDefs = Some(defsCandidate)
+        case Left(msg) => lastError = msg
+      }
+    }
+
+    val verifiedDefs = chosenMutualDefs match {
+      case Some(ds) => ds
+      case None =>
+        break(
+          Left(
+            Diagnostic(
+              Diagnostic.Severity.Error,
+              "K020",
+              s"Could not prove mutual structural termination: $lastError",
+              decl.span,
+              hint = Some("Ensure every mutual recursive call passes a structurally smaller pattern-matched subterm of the same inductive type")
+            )
+          )
+        )
+    }
+
+    // Register each function in the Trusted Kernel via TypeChecker.checkDef
+    var updatedEnv = currentEnv
+    for ((s, idx) <- sigList.zipWithIndex) {
+      val isOpaque = s.decl.annotations.exists(_.name == "opaque")
+      val mutualTerm = Term.MutualFix(verifiedDefs, idx)
+      TypeChecker.checkDef(
+        updatedEnv.kernelEnv,
+        s.decl.name,
+        s.fullType,
+        mutualTerm,
+        transparent = !isOpaque,
+        isTheorem = false,
+        isPartial = false
+      ) match {
+        case Left(kErr) =>
+          break(Left(Diagnostic(Diagnostic.Severity.Error, kErr.code, kErr.message, s.decl.span)))
+        case Right(nextKernel) =>
+          updatedEnv = updatedEnv.copy(
+            kernelEnv = nextKernel,
+            implicitParamCounts = updatedEnv.implicitParamCounts + (s.decl.name -> s.decl.typeParams.length)
+          )
+          if (s.decl.annotations.exists(_.name == "simp")) {
+            updatedEnv = updatedEnv.copy(simpLemmas = s.decl.name :: updatedEnv.simpLemmas)
+          }
+          if (s.decl.annotations.exists(_.name == "hint")) {
+            updatedEnv = updatedEnv.copy(hintLemmas = s.decl.name :: updatedEnv.hintLemmas)
+          }
+          if (s.decl.annotations.exists(_.name == "wf")) {
+            updatedEnv = updatedEnv.copy(wfHints = s.decl.name :: updatedEnv.wfHints)
+          }
+          if (s.decl.annotations.exists(_.name == "noextract")) {
+            updatedEnv = updatedEnv.copy(noExtractNames = updatedEnv.noExtractNames + s.decl.name)
+          }
+      }
+    }
+
+    Right(updatedEnv)
+  }
+
+  // ===========================================================================
+  // Well-Founded Recursion (`termination_by { measure }` -> 0-Axiom Acc[Nat, Lt])
+  // ===========================================================================
+
+  private def elaborateWellFoundedDef(env: ElabEnv, decl: TopDecl.DefDecl): Either[Diagnostic, ElabEnv] = boundary {
+    // 1. Ensure WellFounded primitives (Acc, Lt, natWf, eqSubstLt, Eq, Nat) are in scope
+    for (req <- List("Nat", "Eq", "Acc", "Lt", "natWf", "eqSubstLt")) {
+      if (!env.kernelEnv.contains(req)) {
+        break(
+          Left(
+            Diagnostic(
+              Diagnostic.Severity.Error,
+              "E018",
+              s"'termination_by' requires '$req' to be in scope (add 'import WellFounded.*')",
+              decl.span
+            )
+          )
+        )
+      }
+    }
+
+    val measureExpr = decl.terminationBy.get
+    val metaCtx = new MetaContext()
+    var localCtx = LocalCtx.empty
+    val allBinders = List.newBuilder[Binder]
+
+    for (tp <- decl.typeParams) {
+      val paramType = tp.typeAnnotation match {
+        case Some(ann) =>
+          elaborateType(env, metaCtx, localCtx, ann) match {
+            case Left(err) => break(Left(err))
+            case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+          }
+        case None => Term.USort(Sort.Type(0))
+      }
+      allBinders += Binder(tp.name, paramType)
+      localCtx = localCtx.push(tp.name, paramType)
+    }
+    for (vp <- decl.valueParams) {
+      val paramType = vp.typeAnnotation match {
+        case Some(ann) =>
+          elaborateType(env, metaCtx, localCtx, ann) match {
+            case Left(err) => break(Left(err))
+            case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+          }
+        case None =>
+          break(Left(Diagnostic(Diagnostic.Severity.Error, "E010", s"Parameter '${vp.name}' in '${decl.name}' requires a type annotation", vp.span)))
+      }
+      allBinders += Binder(vp.name, paramType)
+      localCtx = localCtx.push(vp.name, paramType)
+    }
+    val binders = allBinders.result()
+    val m = binders.length
+
+    val returnTypeCore = decl.returnType match {
+      case Some(retExpr) =>
+        elaborateType(env, metaCtx, localCtx, retExpr) match {
+          case Left(err) => break(Left(err))
+          case Right(t)  => metaCtx.zonk(t, localCtx.depth)
+        }
+      case None =>
+        break(Left(Diagnostic(Diagnostic.Severity.Error, "E011", s"Well-founded function '${decl.name}' requires an explicit return type", decl.span)))
+    }
+
+    // 2. Elaborate measure expression against Nat
+    val (measureRaw, envAfterMeasure) = checkExpr(env, metaCtx, localCtx, measureExpr, Term.Ind("Nat")) match {
+      case Left(err)  => break(Left(err))
+      case Right(res) => res
+    }
+    val measureCore = metaCtx.zonk(measureRaw, m)
+    checkAllMetasSolved(metaCtx, measureExpr.span) match {
+      case Left(err) => break(Left(err))
+      case Right(()) => ()
+    }
+
+    // 3. Build internal structurally-recursive helper `f_wf` on `acc: Acc[Nat, Lt](measureCore)`
+    val wfHelperName = s"${decl.name}_wf"
+    val accParamType = Term.apps(Term.Ind("Acc"), List(Term.Ind("Nat"), Term.Const("Lt"), measureCore))
+    val wfBinders = binders :+ Binder("_wfAcc", accParamType)
+    val wfReturnType = Term.shift(returnTypeCore, 1)
+    val wfFullType = Term.pis(wfBinders, wfReturnType)
+
+    // Inside Term.Fix(wfHelperName, recArgIdx = m, wfFullType, ...):
+    //   level 0: wfHelperName
+    //   levels 1..m: binders (shifted over level 0 -> shift(b.ty, 1, i))
+    //   level m+1: _wfAcc : Acc[Nat, Lt](measureUnderFix)
+    //   level m+2: _wfCurMeasure : Nat
+    //   level m+3: _wfInv : (smaller: Nat) => Lt(smaller, _wfCurMeasure) => Acc[Nat, Lt](smaller)
+    //   level m+4: _wfEqM : Eq(Nat, measureAtAcc, _wfCurMeasure)
+    val shiftedWfBinders = wfBinders.zipWithIndex.map { case (b, i) =>
+      Binder(b.name, Term.shift(b.ty, 1, i))
+    }
+
+    val measureAtAcc = Term.shift(measureCore, 1) // at depth m + 2 (under wfSelf, binders, _wfAcc)
+    val retAtAcc = Term.shift(returnTypeCore, 1)
+
+    // Build motive for Acc match at depth m + 2:
+    //   (_wfM: Nat) => (_wfA: Acc(Nat, Lt, _wfM)) => Eq(Nat, shift(measureAtAcc, 2), _wfM) => shift(retAtAcc, 3)
+    val accTypeAtM = Term.apps(Term.Ind("Acc"), List(Term.Ind("Nat"), Term.Const("Lt"), Term.Var(0)))
+    val motiveEqTy = Term.apps(Term.Ind("Eq"), List(Term.Ind("Nat"), Term.shift(measureAtAcc, 2), Term.Var(1)))
+    val motiveBody = Term.Pi("_wfEq", motiveEqTy, Term.shift(retAtAcc, 3))
+    val accMotive = Term.Lam("_wfM", Term.Ind("Nat"), Term.Lam("_wfA", accTypeAtM, motiveBody))
+
+    // Construct context inside Acc.Intro(_wfCurMeasure, _wfInv) and Lam(_wfEqM, ...) at depth m + 5
+    var innerCtx = LocalCtx.empty.push(wfHelperName, wfFullType)
+    for (b <- shiftedWfBinders) innerCtx = innerCtx.push(b.name, b.ty)
+    innerCtx = innerCtx.push("_wfCurMeasure", Term.Ind("Nat"))
+    val invFieldTy = Term.Pi(
+      "smaller",
+      Term.Ind("Nat"),
+      Term.Pi(
+        "relProof",
+        Term.apps(Term.Const("Lt"), List(Term.Var(0), Term.Var(1))),
+        Term.apps(Term.Ind("Acc"), List(Term.Ind("Nat"), Term.Const("Lt"), Term.Var(1)))
+      )
+    )
+    innerCtx = innerCtx.push("_wfInv", invFieldTy)
+    val eqMType = Term.apps(Term.Ind("Eq"), List(Term.Ind("Nat"), Term.shift(measureAtAcc, 2), Term.Var(1)))
+    innerCtx = innerCtx.push("_wfEqM", eqMType)
+
+    val expectedInnerRet = Term.shift(retAtAcc, 3)
+
+    val wfCtx = WfContext(
+      fnName = decl.name,
+      wfHelperName = wfHelperName,
+      numBinders = m,
+      measureCore = measureCore,
+      wfSelfLevel = 0,
+      wfCurMeasureLevel = m + 2,
+      wfInvLevel = m + 3,
+      wfEqMLevel = m + 4,
+      decreasingBy = decl.decreasingBy
+    )
+    val envForBody = envAfterMeasure.copy(
+      implicitParamCounts = envAfterMeasure.implicitParamCounts + (decl.name -> decl.typeParams.length),
+      wfContext = Some(wfCtx)
+    )
+
+    val bodyMetaCtx = new MetaContext()
+    val (elabBody, envAfterBody) = checkExpr(envForBody, bodyMetaCtx, innerCtx, decl.body, expectedInnerRet) match {
+      case Left(err)  => break(Left(err))
+      case Right(res) => res
+    }
+    val zonkedBody = bodyMetaCtx.zonk(elabBody, innerCtx.depth)
+    checkAllMetasSolved(bodyMetaCtx, decl.span) match {
+      case Left(err) => break(Left(err))
+      case Right(()) => ()
+    }
+
+    val introBranchBody = Term.Lam("_wfEqM", eqMType, zonkedBody)
+    val accMatch = Term.Match(
+      indName = "Acc",
+      params = List(Term.Ind("Nat"), Term.Const("Lt")),
+      motive = accMotive,
+      scrutinee = Term.Var(0), // _wfAcc at depth m + 2
+      branches = List(MatchBranch("Intro", List("_wfCurMeasure", "_wfInv"), introBranchBody))
+    )
+    val reflMeasure = Term.apps(Term.Ctor("Eq", "Refl"), List(Term.Ind("Nat"), measureAtAcc))
+    val wfHelperCoreBody = Term.App(accMatch, reflMeasure)
+    val wfLambdaUnderFix = Term.lams(shiftedWfBinders, wfHelperCoreBody)
+    val wfFixTerm = Term.Fix(wfHelperName, m, wfFullType, wfLambdaUnderFix)
+
+    // 4. Verify `f_wf` from scratch with the Trusted Kernel (checks Acc structural recursion!)
+    val kernelAfterWf = TypeChecker.checkDef(
+      envAfterBody.kernelEnv,
+      wfHelperName,
+      wfFullType,
+      wfFixTerm,
+      transparent = true,
+      isTheorem = false,
+      isPartial = false
+    ) match {
+      case Left(kErr) =>
+        break(Left(Diagnostic(Diagnostic.Severity.Error, kErr.code, kErr.message, decl.span)))
+      case Right(k) => k
+    }
+
+    // 5. Define clean user-facing wrapper `f(p_0, ..., p_{m-1}) = f_wf(p_0, ..., p_{m-1}, natWf(measureCore))`
+    val fullTypeFinal = Term.pis(binders, returnTypeCore)
+    val paramVars = (0 until m).toList.map(i => Term.Var(m - 1 - i))
+    val wfCall = Term.apps(
+      Term.Const(wfHelperName),
+      paramVars :+ Term.App(Term.Const("natWf"), measureCore)
+    )
+    val wrapperBody = Term.lams(binders, wfCall)
+    val isOpaque = decl.annotations.exists(_.name == "opaque")
+
+    TypeChecker.checkDef(
+      kernelAfterWf,
+      decl.name,
+      fullTypeFinal,
+      wrapperBody,
+      transparent = !isOpaque,
+      isTheorem = false,
+      isPartial = false
+    ) match {
+      case Left(kErr) =>
+        Left(Diagnostic(Diagnostic.Severity.Error, kErr.code, kErr.message, decl.span))
+      case Right(finalKernel) =>
+        var updated = envAfterBody.copy(
+          kernelEnv = finalKernel,
+          implicitParamCounts = envAfterBody.implicitParamCounts + (decl.name -> decl.typeParams.length),
+          wfContext = None
+        )
+        if (decl.annotations.exists(_.name == "simp")) {
+          updated = updated.copy(simpLemmas = decl.name :: updated.simpLemmas)
+        }
+        if (decl.annotations.exists(_.name == "hint")) {
+          updated = updated.copy(hintLemmas = decl.name :: updated.hintLemmas)
+        }
+        if (decl.annotations.exists(_.name == "wf")) {
+          updated = updated.copy(wfHints = decl.name :: updated.wfHints)
+        }
+        if (decl.annotations.exists(_.name == "noextract")) {
+          updated = updated.copy(noExtractNames = updated.noExtractNames + decl.name)
+        }
+        Right(updated)
+    }
+  }
+
+  /**
+   * Automatically discharges a well-founded decrease proof obligation `Lt(nextMeasure, curMeasure)`
+   * using either user-supplied `decreasing_by` tactics or bounded tactic search with `@wf` lemmas.
+   * Every synthesized proof term is re-verified by the Trusted Kernel.
+   */
+  private def proveWellFoundedDecrease(
+    env: ElabEnv,
+    localCtx: LocalCtx,
+    goalType: Term,
+    decreasingBy: Option[List[TacticStmt]],
+    callSpan: Span
+  ): Either[Diagnostic, Term] = boundary {
+    val cleanEnv = env.copy(wfContext = None)
+    val initState = ProofState.initial(localCtx, goalType, label = "termination_by")
+
+    // 1. If user provided explicit `decreasing_by { ... }`, run it directly!
+    decreasingBy.foreach { userTactics =>
+      Tactics.runScript(cleanEnv, initState, userTactics) match {
+        case Left(err) => break(Left(err))
+        case Right((_, finalState)) =>
+          if (!finalState.isSolved) {
+            val rem = finalState.openGoals.map(_.formatHuman(cleanEnv.kernelEnv)).mkString("\n")
+            break(
+              Left(
+                Diagnostic(
+                  Diagnostic.Severity.Error,
+                  "K020",
+                  s"Well-founded termination proof incomplete in 'decreasing_by':\n$rem",
+                  callSpan
+                )
+              )
+            )
+          }
+          finalState.buildProofTerm match {
+            case Left(msg) => break(Left(Diagnostic(Diagnostic.Severity.Error, "K020", msg, callSpan)))
+            case Right(pt) => break(Right(pt))
+          }
+      }
+    }
+
+    // 2. Apply each matching branch equality (`_wf_eq_*`) individually without aborting on non-matching ones
+    val eqHypNames = localCtx.entries.map(_.name).filter(_.startsWith("_wf_eq_"))
+    val rewrittenState: ProofState = eqHypNames.foldLeft(initState) { (st, hypName) =>
+      Tactics.step(cleanEnv, st, TacticStmt.Rewrite(List(SurfaceExpr.VarExpr(hypName, callSpan)), reverse = false, callSpan)) match {
+        case Right((_, nextSt)) => nextSt
+        case Left(_)            => st
+      }
+    }
+
+    // Build a state where the two Nat arguments inside `Lt(lhs, rhs)` are normalized while keeping `Lt` folded!
+    def normalizeInsideLt(st: ProofState): ProofState = {
+      if (st.openGoals.isEmpty) st
+      else {
+        val g = st.openGoals.head
+        val (hd, args) = Term.splitApps(g.targetType)
+        hd match {
+          case Term.Const("Lt") if args.length == 2 =>
+            val lhsNorm = NbE.normalize(cleanEnv.kernelEnv, g.localCtx, args(0))
+            val rhsNorm = NbE.normalize(cleanEnv.kernelEnv, g.localCtx, args(1))
+            val foldedTarget = Term.apps(Term.Const("Lt"), List(lhsNorm, rhsNorm))
+            // Definitionally equal to g.targetType, so identity proof term is kernel-valid!
+            val newGoal = g.copy(targetType = foldedTarget)
+            st.replaceHead(List(newGoal), children => children(newGoal.goalId), st.nextGoalId)
+          case _ => st
+        }
+      }
+    }
+
+    val simpStep = TacticStmt.Simp(Nil, includeLocalHyps = true, callSpan)
+    val decideStep = TacticStmt.Decide(callSpan)
+    val autoStep = TacticStmt.Auto(Some(6), callSpan)
+
+    val normLtRewritten = normalizeInsideLt(rewrittenState)
+    val normLtInit = normalizeInsideLt(initState)
+
+    // Helper to close all open subgoals with simp / assumption / decide / auto / @wf lemmas
+    def solveState(state: ProofState, depth: Int): Option[ProofState] = boundary {
+      if (state.isSolved) break(Some(state))
+      if (depth <= 0) break(None)
+
+      // Try simple closing tactics on head goal
+      val quickTactics: List[TacticStmt] = List(
+        TacticStmt.Assumption(callSpan),
+        TacticStmt.Refl(callSpan),
+        decideStep,
+        autoStep
+      )
+      for (qt <- quickTactics) {
+        Tactics.step(cleanEnv, state, qt) match {
+          case Right((_, next)) if next.openGoals.length < state.openGoals.length =>
+            solveState(next, depth - 1).foreach(s => break(Some(s)))
+          case _ => ()
+        }
+      }
+
+      // Try @wf lemmas (e.g. ltOfLeSucc, lengthFilterLe, subLtSelf, modLtDivisor, halfLtSelf, ltSelfSucc)
+      val wfCandidates = (cleanEnv.wfHints ++ List("ltSelfSucc", "ltOfLeSucc", "leSuccMono", "subLtSelf", "modLtDivisor", "halfLtSelf", "lengthFilterLe"))
+        .distinct
+        .filter(cleanEnv.kernelEnv.defs.contains)
+      for (lemName <- wfCandidates) {
+        Tactics.step(cleanEnv, state, TacticStmt.Apply(SurfaceExpr.VarExpr(lemName, callSpan), callSpan)) match {
+          case Right((_, next)) =>
+            solveState(next, depth - 1).foreach(s => break(Some(s)))
+          case _ => ()
+        }
+      }
+      None
+    }
+
+    // Try folded states FIRST (so `Lt` stays intact for `@wf` lemma unification), then simplified fallback
+    val prepStates: List[ProofState] = List(
+      Some(initState),
+      Some(rewrittenState),
+      Some(normLtRewritten),
+      Some(normLtInit),
+      Tactics.step(cleanEnv, rewrittenState, simpStep).toOption.map(_._2),
+      Tactics.step(cleanEnv, initState, simpStep).toOption.map(_._2)
+    ).flatten
+
+    for (st <- prepStates) {
+      solveState(st, depth = 4).flatMap(_.buildProofTerm.toOption).foreach { pt =>
+        if (TypeChecker.check(cleanEnv.kernelEnv, localCtx, pt, goalType).isRight) {
+          break(Right(pt))
+        }
+      }
+    }
+
+    val normGoal = NbE.normalize(cleanEnv.kernelEnv, localCtx, goalType)
+    Left(
+      Diagnostic(
+        Diagnostic.Severity.Error,
+        "K020",
+        s"Could not automatically prove well-founded measure decrease:\n  ⊢ ${Pretty.show(normGoal, localCtx.names)}",
+        callSpan,
+        hint = Some("Add a 'decreasing_by { ... }' tactic block or annotate a helper lemma with '@wf'")
+      )
+    )
+  }
+
+  private def zonkLocalCtx(metaCtx: MetaContext, localCtx: LocalCtx): LocalCtx = {
+    val entriesOuterFirst = localCtx.entries.reverse
+    var acc = LocalCtx.empty
+    for (entry <- entriesOuterFirst) {
+      val d = acc.depth
+      acc = acc.push(entry.name, metaCtx.zonk(entry.ty, d), entry.value.map(metaCtx.zonk(_, d)))
+    }
+    acc
   }
 
   private def chooseDecreasingArgIndex(
@@ -690,10 +1388,14 @@ object Elaborator {
 
     case "eval" =>
       val metaCtx = new MetaContext()
-      inferExpr(env, metaCtx, LocalCtx.empty, target).map { case (term, _, nextEnv) =>
+      inferExpr(env, metaCtx, LocalCtx.empty, target).flatMap { case (term, _, nextEnv) =>
         val zTerm = metaCtx.zonk(term, 0)
-        val normalized = NbE.normalize(nextEnv.kernelEnv, LocalCtx.empty, zTerm)
-        nextEnv.copy(directives = nextEnv.directives :+ DirectiveResult("eval", Pretty.show(normalized), span))
+        NbE.normalizeAllowPartial(nextEnv.kernelEnv, LocalCtx.empty, zTerm) match {
+          case Right(normalized) =>
+            Right(nextEnv.copy(directives = nextEnv.directives :+ DirectiveResult("eval", Pretty.show(normalized), span)))
+          case Left(errMsg) =>
+            Left(Diagnostic(Diagnostic.Severity.Error, "E033", errMsg, span))
+        }
       }
 
     case "print" =>
@@ -701,7 +1403,10 @@ object Elaborator {
         case SurfaceExpr.VarExpr(name, _) =>
           val output = env.kernelEnv.defs.get(name) match {
             case Some(defEntry) =>
-              val kind = if (defEntry.isTheorem) "theorem" else "def"
+              val kind =
+                if (defEntry.isTheorem) "theorem"
+                else if (defEntry.isPartial) "partial def"
+                else "def"
               s"$kind $name : ${Pretty.show(defEntry.ty)} = ${Pretty.show(defEntry.body)}"
             case None =>
               env.kernelEnv.inductives.get(name) match {
@@ -1240,12 +1945,14 @@ object Elaborator {
       }
       for {
         (valTerm, valType, env1) <- valRes
-        nextCtx = localCtx.push(name, valType, Some(valTerm))
+        zValType = metaCtx.zonk(valType, localCtx.depth)
+        zValTerm = metaCtx.zonk(valTerm, localCtx.depth)
+        nextCtx = localCtx.push(name, zValType, Some(zValTerm))
         shiftedExp = expectedType.map(Term.shift(_, 1))
         (bodyTerm, bodyType, env2) <- elaborateBlock(env1, metaCtx, nextCtx, rest, result, shiftedExp)
       } yield (
-        Term.Let(name, valType, valTerm, bodyTerm),
-        Term.subst(bodyType, 0, valTerm),
+        Term.Let(name, zValType, zValTerm, bodyTerm),
+        Term.subst(bodyType, 0, zValTerm),
         env2
       )
 
@@ -1281,9 +1988,9 @@ object Elaborator {
       val baseTerm = Term.Var(localIdx)
       if (insertImplicits) {
         val impCount = env.implicitParamCounts.getOrElse(name, 0)
-        // Only insert implicits for local recursive self-reference if it matches
         val (applied, appliedTy) =
-          if (impCount > 0 && localIdx == localCtx.depth - 1) insertImplicitMetas(env.kernelEnv, metaCtx, localCtx, baseTerm, varType, impCount)
+          if (impCount > 0 && env.localRecursiveNames.contains(name))
+            insertImplicitMetas(env.kernelEnv, metaCtx, localCtx, baseTerm, varType, impCount)
           else (baseTerm, varType)
         return Right((applied, appliedTy, env))
       } else {
@@ -1467,6 +2174,80 @@ object Elaborator {
     args: List[SurfaceExpr],
     span: Span
   ): Either[Diagnostic, (Term, Term, ElabEnv)] = {
+    // 0. Well-founded recursive call inside `termination_by` body:
+    //    `f(a_0, ..., a_{m-1})` -> `f_wf(a_0, ..., a_{m-1}, _wfInv(nextMeasure, eqSubstLt(..., decreaseProof, _wfEqM)))`
+    env.wfContext match {
+      case Some(wf) =>
+        val matchedWfCall: Option[List[SurfaceExpr]] = callee match {
+          case SurfaceExpr.VarExpr(name, _) if name == wf.fnName =>
+            Some(args)
+          case SurfaceExpr.TypeAppExpr(SurfaceExpr.VarExpr(name, _), tArgs, _) if name == wf.fnName =>
+            Some(tArgs ++ args)
+          case _ => None
+        }
+        matchedWfCall match {
+          case Some(allSurfaceArgs) =>
+            val depth = localCtx.depth
+            val wfSelfIdx = depth - 1 - wf.wfSelfLevel
+            val wfSelfType = localCtx.lookupType(wfSelfIdx).get
+            val wfSelfBase = Term.Var(wfSelfIdx)
+            val impCount =
+              callee match {
+                case SurfaceExpr.TypeAppExpr(_, _, _) => 0
+                case _                                => env.implicitParamCounts.getOrElse(wf.fnName, 0)
+              }
+            val (fnWithImplicits, tyAfterImplicits) =
+              if (impCount > 0) insertImplicitMetas(env.kernelEnv, metaCtx, localCtx, wfSelfBase, wfSelfType, impCount)
+              else (wfSelfBase, wfSelfType)
+
+            return applyArgsList(env, metaCtx, localCtx, fnWithImplicits, tyAfterImplicits, allSurfaceArgs, span).flatMap {
+              case (appliedTerm, tyAfterArgs, env1) =>
+                val (_, allAppliedArgs) = Term.splitApps(metaCtx.zonk(appliedTerm, depth))
+                if (allAppliedArgs.length != wf.numBinders) {
+                  Left(
+                    Diagnostic(
+                      Diagnostic.Severity.Error,
+                      "E065",
+                      s"Recursive call to '${wf.fnName}' expected ${wf.numBinders} total argument(s), got ${allAppliedArgs.length}",
+                      span
+                    )
+                  )
+                } else {
+                  val nextMeasure = metaCtx.zonk(Term.substMany(wf.measureCore, allAppliedArgs), depth)
+                  val curMeasureShift = depth - 1 - wf.numBinders
+                  val curMeasureInCtx = Term.shift(wf.measureCore, curMeasureShift)
+                  val decreaseGoal = Term.apps(Term.Const("Lt"), List(nextMeasure, curMeasureInCtx))
+                  val zonkedLocalCtx = zonkLocalCtx(metaCtx, localCtx)
+
+                  proveWellFoundedDecrease(env1, zonkedLocalCtx, decreaseGoal, wf.decreasingBy, span).flatMap { decreaseProof =>
+                    val wfCurMeasureVar = Term.Var(depth - 1 - wf.wfCurMeasureLevel)
+                    val wfInvVar = Term.Var(depth - 1 - wf.wfInvLevel)
+                    val wfEqMVar = Term.Var(depth - 1 - wf.wfEqMLevel)
+                    val liftedProof = Term.apps(
+                      Term.Const("eqSubstLt"),
+                      List(nextMeasure, curMeasureInCtx, wfCurMeasureVar, decreaseProof, wfEqMVar)
+                    )
+                    val smallerAcc = Term.apps(wfInvVar, List(nextMeasure, liftedProof))
+                    val fullCall = Term.App(appliedTerm, smallerAcc)
+                    // Peel final Acc Pi from tyAfterArgs to obtain result type
+                    val fuel = new NbE.Fuel()
+                    val evalEnv = NbE.buildEvalEnv(env1.kernelEnv, localCtx, fuel)
+                    NbE.evaluate(env1.kernelEnv, evalEnv, metaCtx.zonk(tyAfterArgs, depth), fuel) match {
+                      case Value.VPi(_, _, codClosure) =>
+                        val accVal = NbE.evaluate(env1.kernelEnv, evalEnv, smallerAcc, fuel)
+                        val resTy = NbE.quote(env1.kernelEnv, depth, NbE.applyClosure(env1.kernelEnv, codClosure, accVal, fuel), fuel)
+                        Right((fullCall, resTy, env1))
+                      case _ =>
+                        Right((fullCall, tyAfterArgs, env1))
+                    }
+                  }
+                }
+            }
+          case None => ()
+        }
+      case None => ()
+    }
+
     // 1. Check UFCS method call: `receiver.method(arg1, arg2)` -> `method(receiver, arg1, arg2)`
     callee match {
       case SurfaceExpr.SelectExpr(receiver, methodName, selSpan) =>
@@ -1667,6 +2448,50 @@ object Elaborator {
         )
       }
 
+      // Inside a well-founded `termination_by` body, track branch equalities `_wf_eq : scrut === Ctor(...)`
+      // so `if` conditions and `match` patterns are available automatically to the decrease prover!
+      if (
+        env1.wfContext.isDefined &&
+        matchExpr.motive.isEmpty &&
+        indEntry.numIndices == 0 &&
+        env1.kernelEnv.inductives.contains("Eq")
+      ) {
+        val scrutTypeClean = Term.apps(Term.Ind(indName), paramTerms)
+        val eqPi = Term.Pi(
+          "_wfBranchEq",
+          Term.apps(Term.Ind("Eq"), List(Term.shift(scrutTypeClean, 1), Term.shift(scrutTerm, 1), Term.Var(0))),
+          Term.shift(resultType, 2)
+        )
+        val eqMotiveTerm = Term.Lam("_wfScrut", scrutTypeClean, eqPi)
+        var curEnv = env1
+        val kernelBranches = List.newBuilder[MatchBranch]
+        for (ctor <- indEntry.constructors) {
+          val (fieldBinders, bodyExpr) = expandedCases(ctor.name)
+          val instFields = indEntry.instantiateFields(ctor, paramTerms)
+          val branchCtx = instFields.zip(fieldBinders).foldLeft(localCtx) { case (ctx, (binder, fieldName)) =>
+            ctx.push(fieldName, binder.ty)
+          }
+          val r = ctor.arity
+          val ctorApp = Term.apps(
+            Term.Ctor(indName, ctor.name),
+            paramTerms.map(Term.shift(_, r)) ++ (0 until r).toList.map(k => Term.Var(r - 1 - k))
+          )
+          val eqHypName = s"_wf_eq_${localCtx.depth}"
+          val eqHypType = Term.apps(Term.Ind("Eq"), List(Term.shift(scrutTypeClean, r), Term.shift(scrutTerm, r), ctorApp))
+          val branchCtxWithEq = branchCtx.push(eqHypName, eqHypType)
+          val expectedBranchRet = Term.shift(resultType, r + 1)
+          checkExpr(curEnv, metaCtx, branchCtxWithEq, bodyExpr, expectedBranchRet) match {
+            case Left(err) => break(Left(err))
+            case Right((branchBodyTerm, nextEnv)) =>
+              curEnv = nextEnv
+              kernelBranches += MatchBranch(ctor.name, fieldBinders, Term.Lam(eqHypName, eqHypType, branchBodyTerm))
+          }
+        }
+        val matchTerm = Term.Match(indName, paramTerms, eqMotiveTerm, scrutTerm, kernelBranches.result())
+        val reflScrut = Term.apps(Term.Ctor("Eq", "Refl"), List(scrutTypeClean, scrutTerm))
+        break(Right((Term.App(matchTerm, reflScrut), resultType, curEnv)))
+      }
+
       // Build motive (explicit `returning`, dependent abstraction on scrutinee var, or constant motive)
       val motiveTerm: Term = matchExpr.motive match {
         case Some(motiveExpr) =>
@@ -1757,6 +2582,17 @@ object Elaborator {
       )
     case Term.Fix(n, r, ty, b) =>
       Term.Fix(n, r, replaceVar(ty, targetIdx, replacement), replaceVar(b, targetIdx + 1, Term.shift(replacement, 1)))
+    case Term.MutualFix(defs, sel) =>
+      val k = defs.length
+      Term.MutualFix(
+        defs.map(d =>
+          d.copy(
+            ty = replaceVar(d.ty, targetIdx, replacement),
+            body = replaceVar(d.body, targetIdx + k, Term.shift(replacement, k))
+          )
+        ),
+        sel
+      )
   }
 
   private def elaborateMatchMotive(

@@ -352,9 +352,11 @@ object StudioServer {
   private def discoverCuratedFiles(): List[CuratedItem] = {
     val candidates = List(
       CuratedItem("showcase", "Showcase: calc, arith, Queue & Sort", "Examples", "Tour of list literals, calc blocks, one-word arith, and verified Queue.", Paths.get("examples/Showcase.samurai")),
+      CuratedItem("advanced-recursion", "Mutual, Well-Founded (div/gcd/quickSort) & partial def", "Examples", "Mutual structural recursion, fuel-free termination_by, and sound isolated partial def.", Paths.get("examples/AdvancedRecursion.samurai")),
       CuratedItem("hello", "Hello Proof (Gentle Intro)", "Examples", "Your first inductive proofs, automation, and #eval.", Paths.get("examples/HelloProof.samurai")),
       CuratedItem("verified-sort", "Verified Insertion Sort", "Examples", "Running insertion sort with full sortedness & permutation proofs.", Paths.get("examples/VerifiedSort.samurai")),
       CuratedItem("safe-vec", "Safe Length-Indexed Vectors", "Examples", "Total vecHead without Option or null — unreachable Nil discharged.", Paths.get("examples/SafeVec.samurai")),
+      CuratedItem("stdlib-wellfounded", "stdlib/WellFounded.samurai", "Stdlib", "0-axiom Acc, natWf, strong induction, divNat, modNat, gcd, and quickSort.", Paths.get("stdlib/WellFounded.samurai")),
       CuratedItem("stdlib-sorting", "stdlib/Sorting.samurai", "Stdlib", "Full insertion sort correctness (Sorted + count permutation + length).", Paths.get("stdlib/Sorting.samurai")),
       CuratedItem("stdlib-queue", "stdlib/Queue.samurai", "Stdlib", "Verified amortized two-stack functional Queue.", Paths.get("stdlib/Queue.samurai")),
       CuratedItem("stdlib-tree", "stdlib/Tree.samurai", "Stdlib", "Verified binary trees with dual induction hypotheses.", Paths.get("stdlib/Tree.samurai")),
@@ -373,6 +375,8 @@ object StudioServer {
     case "K020" => "Termination safety: recursive functions must pass a strictly smaller pattern-matched subterm on each recursive call (e.g. `pred` from `case Nat.Succ(pred)`)."
     case "K025" => "Proof erasure safety: `Prop` types with multiple constructors (`Or`, `Exists`) cannot produce computational `Type` values. Use `Subset` or `Either` for computational witnesses."
     case "K026" | "E071" => "Exhaustiveness safety: every constructor of the matched enum must be handled (or add a `case _ => ...` fallback)."
+    case "K030" => "Partial soundness: `partial def` cannot return a `Prop` type and theorems cannot be marked `partial`."
+    case "K031" => "Total/partial isolation: total definitions and theorems cannot call `partial def` functions. Use `termination_by { ... }` for kernel-verified well-founded recursion."
     case "E042" | "K011" => "Type mismatch: check the expected vs found types above. For equalities, try `simp`, `arith`, or `rewrite(...)`."
     case "T010" => "Reflexivity (`refl`) only closes goals that are already equal by computation. Try `simp`, `arith`, or `rewrite(...)` first."
     case "T015" => "Rewrite pattern not found in the goal: check whether `simp` needs to unfold a definition first, or try `rewriteRev(...)` for the opposite direction."

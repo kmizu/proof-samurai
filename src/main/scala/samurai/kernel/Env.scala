@@ -85,7 +85,8 @@ final case class DefEntry(
   body: Term,
   transparent: Boolean,
   isTheorem: Boolean,
-  axiomsUsed: Set[String]
+  axiomsUsed: Set[String],
+  isPartial: Boolean = false
 )
 
 final case class AxiomEntry(
@@ -126,7 +127,14 @@ final case class KernelEnv(
     }
   }
 
+  def collectPartials(t: Term): Set[String] = {
+    val refs = Term.referencedConsts(t)
+    refs.filter(c => defs.get(c).exists(_.isPartial))
+  }
+
   def allAxiomsUsed: Set[String] = axioms.keySet
+
+  def allPartialDefs: Set[String] = defs.collect { case (name, entry) if entry.isPartial => name }.toSet
 }
 
 object KernelEnv {

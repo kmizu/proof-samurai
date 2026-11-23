@@ -1,0 +1,468 @@
+module WellFounded {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  // Constructive accessibility predicate in Prop (CIC subsingleton: eliminates into Type and erases completely!)
+  enum Acc[Domain: Type, Rel: Domain => Domain => Prop](target: Domain): Prop {
+    case Intro(
+      current: Domain,
+      step: forall (smaller: Domain) => Rel(smaller, current) => Acc[Domain, Rel](smaller)
+    ): Acc[Domain, Rel](current)
+  }
+
+  // Strict less-than relation on Nat (reflected via boolean blt, computes by refl!)
+  def Lt(lower: Nat, upper: Nat): Prop = {
+    blt(lower, upper) === true
+  }
+
+  theorem eqSubstLt(
+    smaller: Nat,
+    left: Nat,
+    right: Nat,
+    ltProof: Lt(smaller, left),
+    eqProof: left === right
+  ): Lt(smaller, right) = by {
+    rewriteRev(eqProof)
+    exact(ltProof)
+  }
+
+  // =========================================================================
+  // Boolean Ordering & Arithmetic Lemmas (100% Axiom-Free)
+  // =========================================================================
+
+  theorem bleTrans(first: Nat):
+    forall (second: Nat, third: Nat) =>
+      (ble(first, second) === true) => (ble(second, third) === true) => (ble(first, third) === true) = by {
+    induction(first) {
+      case Zero => {
+        intros(second, third, h1, h2)
+        refl
+      }
+      case Succ(predFirst, ih) => {
+        intros(second, third)
+        cases(second) {
+          case Zero => {
+            intros(h1, h2)
+            discriminate(h1)
+          }
+          case Succ(predSecond) => {
+            cases(third) {
+              case Zero => {
+                intros(h1, h2)
+                discriminate(h2)
+              }
+              case Succ(predThird) => {
+                intros(h1, h2)
+                simp
+                exact(ih(predSecond, predThird, h1, h2))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  theorem bleStepRight(lower: Nat):
+    forall (upper: Nat) => (ble(lower, upper) === true) => (ble(lower, Nat.Succ(upper)) === true) = by {
+    induction(lower) {
+      case Zero => {
+        intros(upper, h)
+        refl
+      }
+      case Succ(predLower, ih) => {
+        intro(upper)
+        cases(upper) {
+          case Zero => {
+            intro(h)
+            discriminate(h)
+          }
+          case Succ(predUpper) => {
+            intro(h)
+            simp
+            exact(ih(predUpper, h))
+          }
+        }
+      }
+    }
+  }
+
+  @wf
+  theorem ltSelfSucc(value: Nat): Lt(value, Nat.Succ(value)) = by {
+    unfold(Lt)
+    unfold(blt)
+    simp
+  }
+
+  @wf
+  theorem ltOfLeSucc(lower: Nat, upper: Nat, leProof: ble(lower, upper) === true): Lt(lower, Nat.Succ(upper)) = by {
+    unfold(Lt)
+    unfold(blt)
+    simp
+    exact(leProof)
+  }
+
+  // =========================================================================
+  // Well-Foundedness of (Nat, Lt) — 100% Axiom-Free!
+  // =========================================================================
+
+  def absurdProp[Result: Prop](contradictionProof: False): Result = {
+    contradictionProof match {
+    }
+  }
+
+  // Transparent (computational) accessibility proof so NbE computes well-founded functions!
+  def accNatHelper(bound: Nat):
+    forall (value: Nat) => (ble(value, bound) === true) => Acc[Nat, Lt](value) = by {
+    induction(bound) {
+      case Zero => {
+        intros(value, leZero)
+        exact(
+          Acc.Intro[Nat, Lt](
+            value,
+            (smaller: Nat, ltProof: Lt(smaller, value)) =>
+              absurdProp[Acc[Nat, Lt](smaller)](
+                trueIsNotFalse(
+                  eqSym(
+                    ble(Nat.Succ(smaller), 0),
+                    true,
+                    bleTrans(Nat.Succ(smaller), value, 0, ltProof, leZero)
+                  )
+                )
+              )
+          )
+        )
+      }
+      case Succ(predBound, ih) => {
+        intros(value, leSucc)
+        exact(
+          Acc.Intro[Nat, Lt](
+            value,
+            (smaller: Nat, ltProof: Lt(smaller, value)) =>
+              ih(smaller, bleTrans(Nat.Succ(smaller), value, Nat.Succ(predBound), ltProof, leSucc))
+          )
+        )
+      }
+    }
+  }
+
+  def natWf(value: Nat): Acc[Nat, Lt](value) = {
+    accNatHelper(value, value, bleRefl(value))
+  }
+
+  // Strong induction principle on Nat derived directly from natWf (0 axioms!)
+  def natStrongIndAux(
+    predicate: Nat => Prop,
+    step: (current: Nat) => ((smaller: Nat) => Lt(smaller, current) => predicate(smaller)) => predicate(current),
+    target: Nat,
+    acc: Acc[Nat, Lt](target)
+  ): predicate(target) = {
+    acc match {
+      case Acc.Intro(current, inv) =>
+        step(
+          current,
+          (smaller: Nat, ltProof: Lt(smaller, current)) =>
+            natStrongIndAux(predicate, step, smaller, inv(smaller, ltProof))
+        )
+    }
+  }
+
+  theorem natStrongInd(
+    predicate: Nat => Prop,
+    step: (current: Nat) => ((smaller: Nat) => Lt(smaller, current) => predicate(smaller)) => predicate(current),
+    target: Nat
+  ): predicate(target) = {
+    natStrongIndAux(predicate, step, target, natWf(target))
+  }
+
+  // =========================================================================
+  // Decrease Lemmas for Subtraction, Halving, and List.filter (0 Axioms)
+  // =========================================================================
+
+  theorem subLeSelf(left: Nat): forall (right: Nat) => ble(left - right, left) === true = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        refl
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            simp
+          }
+          case Succ(predRight) => {
+            simp
+            exact(bleStepRight(predLeft - predRight, predLeft, ih(predRight)))
+          }
+        }
+      }
+    }
+  }
+
+  @wf
+  theorem subLtSelf(
+    dividend: Nat,
+    divisor: Nat,
+    divisorNotZero: beq(divisor, 0) === false,
+    notLess: blt(dividend, divisor) === false
+  ): Lt(dividend - divisor, dividend) = by {
+    revert(notLess)
+    revert(divisorNotZero)
+    cases(divisor) {
+      case Zero => {
+        intros(badZero, _)
+        discriminate(badZero)
+      }
+      case Succ(predDivisor) => {
+        cases(dividend) {
+          case Zero => {
+            intros(_, badLt)
+            discriminate(badLt)
+          }
+          case Succ(predDividend) => {
+            intros(_, _)
+            unfold(Lt)
+            unfold(blt)
+            simp
+            exact(subLeSelf(predDividend, predDivisor))
+          }
+        }
+      }
+    }
+  }
+
+  def half(value: Nat): Nat = {
+    value match {
+      case Nat.Zero => Nat.Zero
+      case Nat.Succ(Nat.Zero) => Nat.Zero
+      case Nat.Succ(Nat.Succ(rest)) => Nat.Succ(half(rest))
+    }
+  }
+
+  theorem halfLeSelf(value: Nat): ble(half(value), value) === true = by {
+    apply(natStrongInd((n: Nat) => ble(half(n), n) === true))
+    intro(n)
+    cases(n) {
+      case Zero => {
+        intro(_)
+        refl
+      }
+      case Succ(inner) => {
+        cases(inner) {
+          case Zero => {
+            intro(_)
+            refl
+          }
+          case Succ(rest) => {
+            intro(ih)
+            simp
+            exact(bleStepRight(half(rest), rest, ih(rest, bleStepRight(Nat.Succ(rest), Nat.Succ(rest), bleRefl(Nat.Succ(rest))))))
+          }
+        }
+      }
+    }
+  }
+
+  @wf
+  theorem halfLtSelf(value: Nat, notZero: beq(value, 0) === false): Lt(half(value), value) = by {
+    revert(notZero)
+    cases(value) {
+      case Zero => {
+        intro(bad)
+        discriminate(bad)
+      }
+      case Succ(inner) => {
+        cases(inner) {
+          case Zero => {
+            intro(_)
+            refl
+          }
+          case Succ(rest) => {
+            intro(_)
+            unfold(Lt)
+            unfold(blt)
+            simp
+            exact(halfLeSelf(rest))
+          }
+        }
+      }
+    }
+  }
+
+  @wf
+  theorem lengthFilterLe[Element](
+    predicate: Element => Bool,
+    items: List[Element]
+  ): ble(length(filter(predicate, items)), length(items)) === true = by {
+    induction(items) {
+      case Nil => { refl }
+      case Cons(head, tail, ih) => {
+        simp
+        cases(predicate(head)) {
+          case True => {
+            simp
+            exact(ih)
+          }
+          case False => {
+            simp
+            exact(bleStepRight(length(filter(predicate, tail)), length(tail), ih))
+          }
+        }
+      }
+    }
+  }
+
+  // =========================================================================
+  // Practical Well-Founded Functions (0 Axioms, Fuel-Free!)
+  // =========================================================================
+
+  def divNat(dividend: Nat, divisor: Nat): Nat = {
+    if (divisor == 0) {
+      0
+    } else {
+      if (dividend < divisor) {
+        0
+      } else {
+        1 + divNat(dividend - divisor, divisor)
+      }
+    }
+  } termination_by {
+    dividend
+  }
+
+  def modNat(dividend: Nat, divisor: Nat): Nat = {
+    if (divisor == 0) {
+      0
+    } else {
+      if (dividend < divisor) {
+        dividend
+      } else {
+        modNat(dividend - divisor, divisor)
+      }
+    }
+  } termination_by {
+    dividend
+  }
+
+  theorem bleAddLeft(offset: Nat):
+    forall (lower: Nat, upper: Nat) =>
+      (ble(lower, upper) === true) => (ble(offset + lower, offset + upper) === true) = by {
+    induction(offset) {
+      case Zero => {
+        intros(lower, upper, h)
+        exact(h)
+      }
+      case Succ(predOffset, ih) => {
+        intros(lower, upper, h)
+        simp
+        exact(ih(lower, upper, h))
+      }
+    }
+  }
+
+  theorem ltAddLeft(offset: Nat):
+    forall (lower: Nat, upper: Nat) => Lt(lower, upper) => Lt(offset + lower, offset + upper) = by {
+    induction(offset) {
+      case Zero => {
+        intros(lower, upper, ltProof)
+        exact(ltProof)
+      }
+      case Succ(predOffset, ih) => {
+        intros(lower, upper, ltProof)
+        exact(ih(lower, upper, ltProof))
+      }
+    }
+  }
+
+  theorem ltAddRight(lower: Nat, upper: Nat, offset: Nat, ltProof: Lt(lower, upper)):
+    Lt(lower + offset, upper + offset) = by {
+    rewrite(addComm(lower, offset))
+    rewrite(addComm(upper, offset))
+    exact(ltAddLeft(offset, lower, upper, ltProof))
+  }
+
+  theorem bltAsymFalse(left: Nat):
+    forall (right: Nat) => (blt(left, right) === true) => (blt(right, left) === false) = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(bad)
+            discriminate(bad)
+          }
+          case Succ(_) => {
+            intro(_)
+            refl
+          }
+        }
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(bad)
+            discriminate(bad)
+          }
+          case Succ(predRight) => {
+            intro(h)
+            exact(ih(predRight, h))
+          }
+        }
+      }
+    }
+  }
+
+  @wf
+  theorem gcdStepRight(
+    left: Nat,
+    right: Nat,
+    leftNotZero: beq(left, 0) === false,
+    leftLtRight: blt(left, right) === true
+  ): Lt(left + (right - left), left + right) = by {
+    exact(ltAddLeft(left, right - left, right, subLtSelf(right, left, leftNotZero, bltAsymFalse(left, right, leftLtRight))))
+  }
+
+  @wf
+  theorem gcdStepLeft(
+    left: Nat,
+    right: Nat,
+    rightNotZero: beq(right, 0) === false,
+    notLeftLtRight: blt(left, right) === false
+  ): Lt((left - right) + right, left + right) = by {
+    exact(ltAddRight(left - right, left, right, subLtSelf(left, right, rightNotZero, notLeftLtRight)))
+  }
+
+  def gcd(left: Nat, right: Nat): Nat = {
+    if (left == 0) {
+      right
+    } else {
+      if (right == 0) {
+        left
+      } else {
+        if (left < right) {
+          gcd(left, right - left)
+        } else {
+          gcd(left - right, right)
+        }
+      }
+    }
+  } termination_by {
+    left + right
+  }
+
+  def quickSort(items: List[Nat]): List[Nat] = {
+    items match {
+      case [] => []
+      case pivot :: rest => {
+        val smaller = filter((elem: Nat) => elem <= pivot, rest)
+        val larger = filter((elem: Nat) => pivot < elem, rest)
+        quickSort(smaller) ++ (pivot :: quickSort(larger))
+      }
+    }
+  } termination_by {
+    length(items)
+  }
+}

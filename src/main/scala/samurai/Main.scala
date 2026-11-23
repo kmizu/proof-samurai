@@ -104,6 +104,7 @@ object Main {
 
       case Right(env) =>
         val axioms = env.kernelEnv.allAxiomsUsed
+        val partials = env.kernelEnv.allPartialDefs
         val strictFailed = strictMode && axioms.nonEmpty
         val theoremsCount = env.kernelEnv.defs.values.count(_.isTheorem)
         val defsCount = env.kernelEnv.defs.values.count(!_.isTheorem)
@@ -117,7 +118,9 @@ object Main {
             "functions" -> Json.Num(defsCount),
             "theorems" -> Json.Num(theoremsCount),
             "axiomsUsed" -> Json.Arr(axioms.toList.sorted.map(Json.Str(_))),
+            "partialFunctions" -> Json.Arr(partials.toList.sorted.map(Json.Str(_))),
             "isAxiomFree" -> Json.Bool(axioms.isEmpty),
+            "isTotal" -> Json.Bool(partials.isEmpty),
             "directives" -> Json.Arr(env.directives.map(_.toJson)),
             "holes" -> Json.Arr(env.holes.map(_.toJson(env.kernelEnv)))
           )
@@ -130,7 +133,8 @@ object Main {
             )
           } else {
             val trustMsg =
-              if (axioms.isEmpty) "100% axiom-free"
+              if (axioms.isEmpty && partials.isEmpty) "100% axiom-free, total"
+              else if (axioms.isEmpty) s"100% axiom-free, partial: ${partials.toList.sorted.mkString(", ")}"
               else s"uses axiom(s): ${axioms.toList.sorted.mkString(", ")}"
             println(
               s"OK: Verified '$filePath' ($indsCount types, $defsCount functions, $theoremsCount theorems; $trustMsg)"
@@ -144,6 +148,7 @@ object Main {
   private def runExtract(args: Array[String]): Unit = {
     val jsonMode = args.contains("--json")
     val strictMode = args.contains("--strict")
+    val totalMode = args.contains("--total")
 
     def flagValue(flag: String): Option[String] = {
       val idx = args.indexOf(flag)
@@ -183,7 +188,7 @@ object Main {
         sys.exit(1)
 
       case Right(env) =>
-        Erasure.extract(env, Erasure.ExtractionOptions(moduleName, requireAxiomFree = strictMode)) match {
+        Erasure.extract(env, Erasure.ExtractionOptions(moduleName, requireAxiomFree = strictMode, requireTotal = totalMode)) match {
           case Left(err) =>
             if (jsonMode) {
               println(Json.obj("ok" -> Json.Bool(false), "error" -> Json.Str(err)).pretty)

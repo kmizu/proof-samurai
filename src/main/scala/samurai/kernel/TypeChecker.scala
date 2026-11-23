@@ -53,7 +53,6 @@ object TypeChecker {
     }
 
     // 5. Check every constructor's fields, universe levels, and result indices
-    var allFieldsInProp = true
     val checkedCtors = List.newBuilder[CtorEntry]
     for (constructor <- inductive.constructors) {
       if (constructor.resultIndices.length != inductive.numIndices) {
@@ -76,9 +75,6 @@ object TypeChecker {
           case Right(fieldSort) =>
             val isProp = fieldSort == Sort.Prop
             fieldPropFlags += isProp
-            if (!isProp) {
-              allFieldsInProp = false
-            }
             // Predicativity check for Type(k) inductives:
             // All constructor fields must live in Prop or Type(j) with j <= k!
             (inductive.sort, fieldSort) match {
@@ -123,13 +119,26 @@ object TypeChecker {
       case Right(())    => ()
     }
 
-    // 7. Compute subsingleton status for Prop -> Type elimination soundness:
-    // A Prop inductive is a subsingleton iff it has 0 constructors OR 1 constructor whose fields all live in Prop.
+    // 7. Compute subsingleton status for Prop -> Type elimination soundness (standard CIC singleton elimination):
+    // A Prop inductive is a subsingleton iff:
+    // - it has 0 constructors (e.g. False), OR
+    // - it has 1 constructor whose every field either lives in Prop OR is forced directly by a result index
+    //   (e.g. Eq.Refl, True.Intro, And.Intro, and Acc.Intro(current, inv): Acc(current)).
+    val checkedCtorList = checkedCtors.result()
     val isSubsingleton =
-      inductive.sort == Sort.Prop &&
-        (inductive.constructors.isEmpty || (inductive.constructors.length == 1 && allFieldsInProp))
+      inductive.sort == Sort.Prop && (
+        checkedCtorList.isEmpty ||
+          (checkedCtorList.length == 1 && {
+            val soleCtor = checkedCtorList.head
+            val numFields = soleCtor.arity
+            soleCtor.fieldIsProp.zipWithIndex.forall { case (isPropField, fieldIdx) =>
+              val fieldVarInResultIndices = Term.Var(numFields - 1 - fieldIdx)
+              isPropField || soleCtor.resultIndices.contains(fieldVarInResultIndices)
+            }
+          })
+      )
 
-    val verifiedInd = inductive.copy(constructors = checkedCtors.result(), isSubsingleton = isSubsingleton)
+    val verifiedInd = inductive.copy(constructors = checkedCtorList, isSubsingleton = isSubsingleton)
     Right(kernelEnv.addInductive(verifiedInd))
   }
 
@@ -140,27 +149,157 @@ object TypeChecker {
     declaredType: Term,
     body: Term,
     transparent: Boolean = true,
-    isTheorem: Boolean = false
+    isTheorem: Boolean = false,
+    isPartial: Boolean = false
   ): Either[KernelError, KernelEnv] = {
     if (kernelEnv.contains(name)) {
       return Left(KernelError("K001", s"Duplicate declaration name '$name'"))
     }
-    for {
-      _ <- inferSort(kernelEnv, LocalCtx.empty, declaredType)
-      _ <- check(kernelEnv, LocalCtx.empty, body, declaredType)
-    } yield {
+    if (isPartial) {
+      if (isTheorem) {
+        return Left(KernelError("K030", s"Theorem '$name' cannot be declared partial"))
+      }
+      for {
+        _ <- inferSort(kernelEnv, LocalCtx.empty, declaredType)
+        codSort <- codomainSort(kernelEnv, declaredType)
+        _ <-
+          if (codSort == Sort.Prop)
+            Left(
+              KernelError(
+                "K030",
+                s"Partial function '$name' cannot return a Prop type (would compromise logical soundness)"
+              )
+            )
+          else Right(())
+        // Register opaque self-reference so partial body may make unrestricted recursive calls via Term.Const(name),
+        // while keeping Term.Fix strictly guarded and keeping NbE non-unfolding during type checking!
+        tentativeSelf = DefEntry(
+          name = name,
+          ty = declaredType,
+          body = Term.Const(name),
+          transparent = false,
+          isTheorem = false,
+          axiomsUsed = Set.empty,
+          isPartial = true
+        )
+        envWithSelf = kernelEnv.addDef(tentativeSelf)
+        _ <- check(envWithSelf, LocalCtx.empty, body, declaredType)
+      } yield {
+        val axiomsUsed = kernelEnv.collectAxioms(declaredType) ++ kernelEnv.collectAxioms(body)
+        kernelEnv.addDef(
+          DefEntry(
+            name = name,
+            ty = declaredType,
+            body = body,
+            transparent = false,
+            isTheorem = false,
+            axiomsUsed = axiomsUsed,
+            isPartial = true
+          )
+        )
+      }
+    } else {
+      val leakedPartials = kernelEnv.collectPartials(declaredType) ++ kernelEnv.collectPartials(body)
+      if (leakedPartials.nonEmpty) {
+        return Left(
+          KernelError(
+            "K031",
+            s"Total ${if (isTheorem) "theorem" else "definition"} '$name' cannot reference partial function(s): " +
+              s"${leakedPartials.toList.sorted.mkString(", ")}"
+          )
+        )
+      }
+      for {
+        _ <- inferSort(kernelEnv, LocalCtx.empty, declaredType)
+        _ <- check(kernelEnv, LocalCtx.empty, body, declaredType)
+      } yield {
+        val axiomsUsed = kernelEnv.collectAxioms(declaredType) ++ kernelEnv.collectAxioms(body)
+        kernelEnv.addDef(
+          DefEntry(
+            name = name,
+            ty = declaredType,
+            body = body,
+            transparent = transparent,
+            isTheorem = isTheorem,
+            axiomsUsed = axiomsUsed,
+            isPartial = false
+          )
+        )
+      }
+    }
+  }
+
+  /** Check and register a mutually recursive group of `partial def`s (all isolated from total code and Prop). */
+  def checkMutualPartialDefs(
+    kernelEnv: KernelEnv,
+    entries: List[(String, Term, Term)]
+  ): Either[KernelError, KernelEnv] = boundary {
+    if (entries.isEmpty) {
+      break(Left(KernelError("K030", "Mutual partial block cannot be empty")))
+    }
+    val names = entries.map(_._1)
+    if (names.distinct.length != names.length) {
+      break(Left(KernelError("K001", "Duplicate declaration names in mutual block")))
+    }
+    var tentativeEnv = kernelEnv
+    for ((name, declaredType, _) <- entries) {
+      if (kernelEnv.contains(name)) {
+        break(Left(KernelError("K001", s"Duplicate declaration name '$name'")))
+      }
+      inferSort(kernelEnv, LocalCtx.empty, declaredType) match {
+        case Left(err) => break(Left(err))
+        case Right(_)  => ()
+      }
+      codomainSort(kernelEnv, declaredType) match {
+        case Left(err) => break(Left(err))
+        case Right(Sort.Prop) =>
+          break(
+            Left(
+              KernelError(
+                "K030",
+                s"Partial function '$name' cannot return a Prop type (would compromise logical soundness)"
+              )
+            )
+          )
+        case Right(_) => ()
+      }
+      tentativeEnv = tentativeEnv.addDef(
+        DefEntry(name, declaredType, Term.Const(name), transparent = false, isTheorem = false, axiomsUsed = Set.empty, isPartial = true)
+      )
+    }
+    var finalEnv = kernelEnv
+    for ((name, declaredType, body) <- entries) {
+      check(tentativeEnv, LocalCtx.empty, body, declaredType) match {
+        case Left(err) => break(Left(err))
+        case Right(()) => ()
+      }
       val axiomsUsed = kernelEnv.collectAxioms(declaredType) ++ kernelEnv.collectAxioms(body)
-      kernelEnv.addDef(
+      finalEnv = finalEnv.addDef(
         DefEntry(
           name = name,
           ty = declaredType,
           body = body,
-          transparent = transparent,
-          isTheorem = isTheorem,
-          axiomsUsed = axiomsUsed
+          transparent = false,
+          isTheorem = false,
+          axiomsUsed = axiomsUsed,
+          isPartial = true
         )
       )
     }
+    Right(finalEnv)
+  }
+
+  private def codomainSort(kernelEnv: KernelEnv, typeTerm: Term): Either[KernelError, Sort] = {
+    val fuel = new NbE.Fuel()
+    var ctx = LocalCtx.empty
+    var cur = NbE.normalize(kernelEnv, ctx, typeTerm)
+    while (cur.isInstanceOf[Term.Pi]) {
+      val Term.Pi(name, domain, codomain) = cur: @unchecked
+      ctx = ctx.push(name, domain)
+      cur = NbE.normalize(kernelEnv, ctx, codomain)
+    }
+    val _ = fuel
+    inferSort(kernelEnv, ctx, cur)
   }
 
   /** Check and register an explicit axiom (or sorry) in `kernelEnv`. */
@@ -319,6 +458,38 @@ object TypeChecker {
           .left
           .map(msg => KernelError("K020", msg))
       } yield fixType
+
+    case Term.MutualFix(defs, selectedIndex) =>
+      boundary {
+        if (defs.isEmpty || selectedIndex < 0 || selectedIndex >= defs.length) {
+          break(Left(KernelError("K020", s"Invalid MutualFix selection #$selectedIndex (size ${defs.length})")))
+        }
+        // 1. Check all declared types in `localCtx`
+        for (d <- defs) {
+          inferSort(kernelEnv, localCtx, d.ty) match {
+            case Left(err) => break(Left(err))
+            case Right(_)  => ()
+          }
+        }
+        // 2. Push all `k` mutual binders into `mutualCtx` (d_j's type shifted by +j)
+        val k = defs.length
+        val mutualCtx = defs.zipWithIndex.foldLeft(localCtx) { case (ctxAcc, (d, j)) =>
+          ctxAcc.push(d.name, Term.shift(d.ty, j))
+        }
+        // 3. Check each body against `shift(d.ty, k)`
+        for (d <- defs) {
+          check(kernelEnv, mutualCtx, d.body, Term.shift(d.ty, k)) match {
+            case Left(err) => break(Left(err))
+            case Right(()) => ()
+          }
+        }
+        // 4. Verify mutual structural termination guard
+        Termination.checkMutualFix(kernelEnv, localCtx, defs) match {
+          case Left(msg) => break(Left(KernelError("K020", msg)))
+          case Right(()) => ()
+        }
+        Right(defs(selectedIndex).ty)
+      }
   }
 
   private def inferMatch(

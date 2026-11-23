@@ -52,6 +52,16 @@ case List.Cons(head, tail) =>
 
 **Fix:** Handle every constructor of the matched `enum`, or add a fallback `case _ => ...`. For indexed families such as `Vec[A](Nat.Succ(n))`, provably unreachable constructors like `Vec.Nil` are discharged automatically by the elaborator.
 
+## `K030` / `K031` — Partial Function Soundness & Isolation
+
+**Cause:**
+- `K030`: A `partial def` attempted to return a `Prop` type (which would let a diverging loop inhabit `False`).
+- `K031`: A total `def` or `theorem` referenced a `partial def` (which could leak non-termination into the logical fragment).
+
+**Fix:**
+- If the function actually terminates by a `Nat` measure (such as division, GCD, or Quicksort), use `import WellFounded.*` with a `termination_by { ... }` clause instead of `partial def`.
+- Keep `partial def` at the computational boundary returning `Type`, and call it only from other `partial def`s or extracted host code.
+
 ## `T010` — Reflexivity (`refl`) Failed
 
 **Cause:** `refl` closes `lhs === rhs` only when both sides reduce to the exact same normal form by computation.

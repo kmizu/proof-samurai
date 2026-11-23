@@ -238,4 +238,115 @@ class ElaboratorTacticsSuite extends FunSuite {
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
     assert(env.directives.exists(d => d.directive == "eval" && d.output == "[1, 2, 3]"), s"Got ${env.directives}")
   }
+
+  test("mutual recursion, well-founded termination_by / decreasing_by, and sound isolated partial def") {
+    val validSource =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import List.*
+        |import WellFounded.*
+        |
+        |mutual {
+        |  def evenCheck(n: Nat): Bool = {
+        |    n match {
+        |      case Nat.Zero => true
+        |      case Nat.Succ(p) => oddCheck(p)
+        |    }
+        |  }
+        |  def oddCheck(n: Nat): Bool = {
+        |    n match {
+        |      case Nat.Zero => false
+        |      case Nat.Succ(p) => evenCheck(p)
+        |    }
+        |  }
+        |}
+        |
+        |theorem even4: evenCheck(4) === true = by { refl }
+        |theorem odd5: oddCheck(5) === true = by { refl }
+        |
+        |def countDownStep(n: Nat): Nat = {
+        |  n match {
+        |    case Nat.Zero => 0
+        |    case Nat.Succ(p) => 1 + countDownStep(p)
+        |  }
+        |} termination_by {
+        |  n
+        |} decreasing_by {
+        |  rewrite(_wf_eq_6)
+        |  apply(ltSelfSucc)
+        |}
+        |
+        |theorem countDown3: countDownStep(3) === 3 = by { refl }
+        |
+        |mutual {
+        |  partial def ping(n: Nat): Nat = {
+        |    if (n == 0) { 0 } else { pong(n - 1) }
+        |  }
+        |  partial def pong(n: Nat): Nat = {
+        |    if (n == 0) { 1 } else { ping(n - 1) }
+        |  }
+        |}
+        |
+        |#eval ping(5)
+      """.stripMargin
+
+    val env = checkOk(validSource)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+    assertEquals(env.kernelEnv.allPartialDefs, Set("ping", "pong"))
+    assert(env.directives.exists(d => d.directive == "eval" && d.output == "1"), s"Got ${env.directives}")
+
+    // Non-decreasing mutual recursion rejected (K020)
+    val badMutual = Elaborator.checkSource(
+      "badMutual.samurai",
+      """
+        |import Prelude.*
+        |import Nat.*
+        |mutual {
+        |  def a(n: Nat): False = { b(n) }
+        |  def b(n: Nat): False = { a(n) }
+        |}
+      """.stripMargin,
+      baseEnv
+    )
+    assert(badMutual.isLeft && badMutual.left.toOption.get.code == "K020", s"Expected K020, got $badMutual")
+
+    // Non-decreasing termination_by rejected (K020)
+    val badWf = Elaborator.checkSource(
+      "badWf.samurai",
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import WellFounded.*
+        |def badLoop(n: Nat): Nat = { badLoop(n) } termination_by { n }
+      """.stripMargin,
+      baseEnv
+    )
+    assert(badWf.isLeft && badWf.left.toOption.get.code == "K020", s"Expected K020, got $badWf")
+
+    // partial def returning Prop rejected (K030)
+    val badPartialProp = Elaborator.checkSource(
+      "badPartialProp.samurai",
+      """
+        |import Prelude.*
+        |import Nat.*
+        |partial def fakeProof(n: Nat): False = { fakeProof(n) }
+      """.stripMargin,
+      baseEnv
+    )
+    assert(badPartialProp.isLeft && badPartialProp.left.toOption.get.code == "K030", s"Expected K030, got $badPartialProp")
+
+    // Total function calling partial def rejected (K031)
+    val badPartialLeak = Elaborator.checkSource(
+      "badPartialLeak.samurai",
+      """
+        |import Prelude.*
+        |import Nat.*
+        |partial def diverge(n: Nat): Nat = { diverge(n) }
+        |def totalWrapper(n: Nat): Nat = { diverge(n) }
+      """.stripMargin,
+      baseEnv
+    )
+    assert(badPartialLeak.isLeft && badPartialLeak.left.toOption.get.code == "K031", s"Expected K031, got $badPartialLeak")
+  }
 }

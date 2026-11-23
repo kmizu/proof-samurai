@@ -15,16 +15,20 @@ Proof Samurai は **de Bruijn 基準（de Bruijn criterion）** に基づいて�
 
 3. **Subsingleton `Prop` 除去規則（`TypeChecker.scala`）**
    - `Prop` は `Pi` 型に対して非可述であり、定義的証明無関係性（proof irrelevance）を持ちます。
-   - `Prop` 帰納型から `Type(k)` への除去は、対象が subsingleton（コンストラクタが 0 個の `False`、またはコンストラクタが 1 個ですべてのフィールドが `Prop` である `Eq` や `True`）である場合にのみ許可されます。
-   - `Or` や `Exists` を `Type` へ除去する操作は拒否され、論理的無矛盾性とコード抽出時の健全な証明消去を同時に保証します。
+   - `Prop` 帰納型から `Type(k)` への除去は、対象が subsingleton（コンストラクタが 0 個の `False`、またはコンストラクタが 1 個ですべてのフィールドが `Prop` であるか結果添字により一意に定まる `Eq`、`True`、`Acc`）である場合にのみ許可されます。
+   - `Or` や `Exists` を `Type` へ除去する操作は拒否され（`K025`）、論理的無矛盾性とコード抽出時の健全な証明消去を同時に保証します。
 
-4. **構造的減少による停止性検査（`Termination.scala`）**
-   - すべての再帰項 `Fix(name, recArgIdx, ty, body)` は、`recArgIdx` 番目に帰納型の引数を取る必要があります。
-   - `name` へのすべての再帰呼び出しは `recArgIdx` まで完全適用されており、減少パラメータのパターンマッチから得た構造的に真に小さい部分項を渡さなければなりません。
-   - 未適用または非減少な再帰参照は拒否され、`def loop(n: Nat): False = loop(n)` を防ぎます。
-   - NbE（`NbE.scala`）では、`Fix` の展開は減少引数がコンストラクタ値（`VCtor`）であるときに限られるため、正規化の停止性が保証されます。
+4. **構造的・相互再帰の停止性検査（`Termination.scala`）**
+   - すべての再帰項 `Fix` および相互再帰項 `MutualFix` は、`recArgIdx` 番目に帰納型の減少引数を取る必要があります（相互再帰では共通の帰納型）。
+   - すべての再帰呼び出しは `recArgIdx` まで完全適用されており、減少パラメータのパターンマッチから得た構造的に真に小さい部分項（`Acc.Intro` のような高階再帰フィールドを含む）を渡さなければなりません。これにより、公理 0 の `termination_by` 整礎再帰がカーネル内で完全に検証されます。
+   - 未適用または非減少な再帰参照は拒否され（`K020`）、`def loop(n: Nat): False = loop(n)` や非減少な相互再帰ループを防ぎます。
+   - NbE（`NbE.scala`）では、`Fix` / `MutualFix` の展開は減少引数がコンストラクタ値（`VCtor`）であるときに限られるため、正規化の停止性が保証されます。
 
-5. **網羅性検査（`TypeChecker.scala`）**
+5. **全関数と `partial def` の厳格な隔離（`TypeChecker.scala`, `Env.scala`）**
+   - `partial def` は無制限の再帰を記述できますが、`Prop` を返すことは禁止され（`K030`）、`KernelEnv` 内では不透過（型検査時に展開しない）として登録され、全関数や定理からの参照は禁止されます（`K031`）。
+   - コード抽出時には `ExtractionManifest` の `partialFunctions` として明示的に監査でき、`--total` オプションで `partial` 関数を含む抽出を拒否できます。
+
+6. **網羅性検査（`TypeChecker.scala`）**
    - コア言語の `Match` は、対象帰納型のすべてのコンストラクタを定義順に網羅する分岐を持たなければなりません。
    - 表面構文で到達不能コンストラクタを省略した添字付きマッチ（例: `Vec[A](Nat.Succ(n))` で `Vec.Nil` を省略）は、エラボレータによって判別モチーフ付きコア項へ変換されたうえでカーネルによる完全検査を受けます。
 

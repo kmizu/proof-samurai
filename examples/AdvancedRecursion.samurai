@@ -1,0 +1,103 @@
+module AdvancedRecursion {
+  import Prelude.*
+  import Nat.*
+  import List.*
+  import WellFounded.*
+
+  // =========================================================================
+  // 1. Mutual Structural Recursion (`mutual { ... }`) — 100% Kernel-Verified!
+  // =========================================================================
+
+  mutual {
+    def isEven(value: Nat): Bool = {
+      value match {
+        case Nat.Zero => true
+        case Nat.Succ(pred) => isOdd(pred)
+      }
+    }
+
+    def isOdd(value: Nat): Bool = {
+      value match {
+        case Nat.Zero => false
+        case Nat.Succ(pred) => isEven(pred)
+      }
+    }
+  }
+
+  theorem isEvenOrOdd(value: Nat): (isEven(value) === true) \/ (isOdd(value) === true) = by {
+    induction(value) {
+      case Zero => {
+        left
+        refl
+      }
+      case Succ(pred, ih) => {
+        cases(ih) {
+          case Inl(evenPred) => {
+            right
+            simp
+            exact(evenPred)
+          }
+          case Inr(oddPred) => {
+            left
+            simp
+            exact(oddPred)
+          }
+        }
+      }
+    }
+  }
+
+  #eval isEven(6)
+  #eval isOdd(7)
+
+  // =========================================================================
+  // 2. Well-Founded Recursion (`termination_by`) — 0 Axioms, Fuel-Free!
+  // =========================================================================
+
+  def log2Floor(value: Nat): Nat = {
+    if (value == 0) {
+      0
+    } else {
+      if (half(value) == 0) {
+        0
+      } else {
+        1 + log2Floor(half(value))
+      }
+    }
+  } termination_by {
+    value
+  }
+
+  theorem div17By5: divNat(17, 5) === 3 = by { refl }
+  theorem mod17By5: modNat(17, 5) === 2 = by { refl }
+  theorem gcd48And18: gcd(48, 18) === 6 = by { refl }
+  theorem log2Of16: log2Floor(16) === 4 = by { refl }
+  theorem quickSortDemo: quickSort([3, 1, 4, 1, 5, 2]) === [1, 1, 2, 3, 4, 5] = by { refl }
+
+  #eval divNat(17, 5)
+  #eval modNat(17, 5)
+  #eval gcd(48, 18)
+  #eval log2Floor(16)
+  #eval quickSort([3, 1, 4, 1, 5, 2])
+
+  // =========================================================================
+  // 3. Sound Isolated `partial def` (Unrestricted General Recursion)
+  //    - Cannot return Prop (K030)
+  //    - Cannot be called from any theorem or total def (K031)
+  //    - Fully type-checked, exhaustiveness-checked, and extractable!
+  // =========================================================================
+
+  partial def collatzSteps(value: Nat): Nat = {
+    if (value <= 1) {
+      0
+    } else {
+      if (isEven(value)) {
+        1 + collatzSteps(half(value))
+      } else {
+        1 + collatzSteps(3 * value + 1)
+      }
+    }
+  }
+
+  #eval collatzSteps(6)
+}

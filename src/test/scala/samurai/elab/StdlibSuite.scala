@@ -81,8 +81,18 @@ class StdlibSuite extends FunSuite {
     }
   }
 
+  test("WellFounded.samurai verifies 0-axiom Acc, natWf, divNat, modNat, gcd, and quickSort totally") {
+    val env = checkStdlibFile("WellFounded.samurai")
+    assertEquals(env.kernelEnv.allPartialDefs, Set.empty[String], "WellFounded.samurai must be 100% total")
+    assert(env.kernelEnv.inductives("Acc").isSubsingleton, "Acc must be recognized as a CIC subsingleton")
+    for (sym <- List("natWf", "natStrongInd", "subLtSelf", "halfLtSelf", "lengthFilterLe", "divNat", "modNat", "gcd", "quickSort")) {
+      assert(env.kernelEnv.defs.contains(sym), s"Missing well-founded symbol $sym")
+      assertEquals(env.kernelEnv.defs(sym).axiomsUsed, Set.empty[String])
+    }
+  }
+
   test("all examples/*.samurai verify 100% axiom-free") {
-    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai")) {
+    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai", "AdvancedRecursion.samurai")) {
       val path = Paths.get("examples", example)
       val source = java.nio.file.Files.readString(path)
       Elaborator.checkFile(path, ElabEnv(searchPaths = searchPaths)) match {

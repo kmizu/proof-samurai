@@ -80,6 +80,12 @@ final class MetaContext {
       )
     case Term.Fix(n, recIdx, ty, body) =>
       Term.Fix(n, recIdx, zonk(ty, currentDepth), zonk(body, currentDepth + 1))
+    case Term.MutualFix(defs, sel) =>
+      val k = defs.length
+      Term.MutualFix(
+        defs.map(d => d.copy(ty = zonk(d.ty, currentDepth), body = zonk(d.body, currentDepth + k))),
+        sel
+      )
   }
 
   /**
@@ -97,8 +103,53 @@ final class MetaContext {
     val leftZonked = zonk(leftRaw, depth)
     val rightZonked = zonk(rightRaw, depth)
 
-    // Fast syntactic / meta-head check BEFORE normalizing (preserves folded definitions!)
+    // Fast syntactic / same-head check BEFORE normalizing (preserves folded transparent definitions like Lt, blt, ble, length!)
     if (leftZonked == rightZonked) return Right(())
+
+    val (lHead, lArgs) = Term.splitApps(leftZonked)
+    val (rHead, rArgs) = Term.splitApps(rightZonked)
+    def sameFoldedHead(a: Term, b: Term): Boolean = (a, b) match {
+      case _ if a == b => true
+      case (Term.Const(n), fx: Term.Fix) if fx.name == n =>
+        kernelEnv.defs.get(n).exists(_.transparent) && {
+          val f = new NbE.Fuel()
+          val ev = NbE.buildEvalEnv(kernelEnv, localCtx, f)
+          NbE.areConvertible(kernelEnv, depth, NbE.evaluate(kernelEnv, ev, a, f), NbE.evaluate(kernelEnv, ev, b, f), f)
+        }
+      case (fx: Term.Fix, Term.Const(n)) if fx.name == n =>
+        kernelEnv.defs.get(n).exists(_.transparent) && {
+          val f = new NbE.Fuel()
+          val ev = NbE.buildEvalEnv(kernelEnv, localCtx, f)
+          NbE.areConvertible(kernelEnv, depth, NbE.evaluate(kernelEnv, ev, a, f), NbE.evaluate(kernelEnv, ev, b, f), f)
+        }
+      case (Term.Const(n), mf: Term.MutualFix) if mf.selectedIndex >= 0 && mf.selectedIndex < mf.defs.length && mf.defs(mf.selectedIndex).name == n =>
+        kernelEnv.defs.get(n).exists(_.transparent) && {
+          val f = new NbE.Fuel()
+          val ev = NbE.buildEvalEnv(kernelEnv, localCtx, f)
+          NbE.areConvertible(kernelEnv, depth, NbE.evaluate(kernelEnv, ev, a, f), NbE.evaluate(kernelEnv, ev, b, f), f)
+        }
+      case (mf: Term.MutualFix, Term.Const(n)) if mf.selectedIndex >= 0 && mf.selectedIndex < mf.defs.length && mf.defs(mf.selectedIndex).name == n =>
+        kernelEnv.defs.get(n).exists(_.transparent) && {
+          val f = new NbE.Fuel()
+          val ev = NbE.buildEvalEnv(kernelEnv, localCtx, f)
+          NbE.areConvertible(kernelEnv, depth, NbE.evaluate(kernelEnv, ev, a, f), NbE.evaluate(kernelEnv, ev, b, f), f)
+        }
+      case _ => false
+    }
+    if (lArgs.nonEmpty && lArgs.length == rArgs.length && sameFoldedHead(lHead, rHead)) {
+      val snap = snapshot()
+      val allMatched = boundary {
+        for ((la, ra) <- lArgs.zip(rArgs)) {
+          unify(kernelEnv, localCtx, la, ra, allowSubtyping = false) match {
+            case Right(()) => ()
+            case Left(_)   => break(false)
+          }
+        }
+        true
+      }
+      if (allMatched) return Right(())
+      else restore(snap)
+    }
 
     val fuel = new NbE.Fuel()
     val evalEnv = NbE.buildEvalEnv(kernelEnv, localCtx, fuel)
@@ -202,9 +253,11 @@ final class MetaContext {
 
       case (Value.VNeutral(h1, sp1), Value.VNeutral(h2, sp2))
           if sp1.length == sp2.length && sameHead(kernelEnv, depth, h1, h2, fuel) =>
-        unifySpines(kernelEnv, depth, sp1, sp2, fuel).orElse {
-          if (NbE.areConvertible(kernelEnv, depth, left, right, fuel)) Right(())
-          else Left("Cannot unify neutral expressions")
+        unifySpines(kernelEnv, depth, sp1, sp2, fuel) match {
+          case Right(()) => Right(())
+          case Left(innerErr) =>
+            if (NbE.areConvertible(kernelEnv, depth, left, right, fuel)) Right(())
+            else Left(s"Neutral spine mismatch: $innerErr")
         }
 
       case _ =>
@@ -245,6 +298,8 @@ final class MetaContext {
     case (NeutralHead.NConst(a), NeutralHead.NConst(b)) => a == b
     case (NeutralHead.NFix(_, i1, _, _), NeutralHead.NFix(_, i2, _, _)) =>
       i1 == i2 && NbE.areConvertible(kernelEnv, depth, Value.VNeutral(h1, Nil), Value.VNeutral(h2, Nil), fuel)
+    case (NeutralHead.NMutualFix(_, s1), NeutralHead.NMutualFix(_, s2)) =>
+      s1 == s2 && NbE.areConvertible(kernelEnv, depth, Value.VNeutral(h1, Nil), Value.VNeutral(h2, Nil), fuel)
     case _ => false
   }
 
