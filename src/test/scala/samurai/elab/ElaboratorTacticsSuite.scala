@@ -349,4 +349,54 @@ class ElaboratorTacticsSuite extends FunSuite {
     )
     assert(badPartialLeak.isLeft && badPartialLeak.left.toOption.get.code == "K031", s"Expected K031, got $badPartialLeak")
   }
+
+  test("documentation examples: Proofs for Programmers side-by-side function vs tactic proofs") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |
+        |def andCommAsFunction(left: Prop, right: Prop, both: left /\ right): right /\ left = {
+        |  both match {
+        |    case And.Intro(leftProof, rightProof) => And.Intro[right, left](rightProof, leftProof)
+        |  }
+        |}
+        |
+        |theorem andCommWithTactics(left: Prop, right: Prop, both: left /\ right): right /\ left = by {
+        |  cases(both) {
+        |    case Intro(leftProof, rightProof) => {
+        |      split
+        |      exact(rightProof)
+        |      exact(leftProof)
+        |    }
+        |  }
+        |}
+        |
+        |def addZeroRightAsFunction(value: Nat): value + 0 === value = {
+        |  value match returning (n: Nat) => n + 0 === n {
+        |    case Nat.Zero => Eq.Refl[Nat, 0]
+        |    case Nat.Succ(pred) =>
+        |      congrArg[Nat, Nat](
+        |        (k: Nat) => Nat.Succ(k),
+        |        pred + 0,
+        |        pred,
+        |        addZeroRightAsFunction(pred)
+        |      )
+        |  }
+        |}
+        |
+        |theorem addZeroRightWithTactics(value: Nat): value + 0 === value = by {
+        |  induction(value) {
+        |    case Zero => { refl }
+        |    case Succ(pred, ih) => {
+        |      rewrite(ih)
+        |      refl
+        |    }
+        |  }
+        |}
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+  }
 }

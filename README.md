@@ -1,4 +1,4 @@
-# Proof Samurai (`proof-samurai`)
+# <img src="docs/favicon.svg" alt="" width="28" height="28" align="absmiddle" /> Proof Samurai (`proof-samurai`)
 
 [English](README.md) | [日本語](README.ja.md) | [Documentation (GitHub Pages)](https://kmizu.github.io/proof-samurai/)
 
@@ -9,14 +9,14 @@ A dependently-typed proof assistant in whitespace-insensitive Scala 3 brace synt
 ## Overview
 
 - **Scala 3 Brace Syntax (Whitespace-Insensitive)**
-  `enum`, `case class`, `def`, `val`, `theorem`, `[1, 2, 3]` list literals, `match { case ... => ... }`, `if (...) { ... } else { ... }`, `calc { ... }` equational reasoning, dot projections (`pair.first`), UFCS (`items.length`), and `by { ... }` tactic blocks. Every block uses explicit `{ ... }` braces.
+  `enum`, `case class`, `def`, `mutual`, `termination_by` / `decreasing_by`, isolated `partial def`, `val`, `theorem`, `[1, 2, 3]` list literals, `match { case ... => ... }`, `if (...) { ... } else { ... }`, `calc { ... }` equational reasoning, dot projections (`pair.first`), UFCS (`items.length`), and `by { ... }` tactic blocks. Every block uses explicit `{ ... }` braces.
 - **Small Trusted Kernel (`samurai.kernel`)**
   - De Bruijn-indexed Martin-Löf / CIC core following the de Bruijn criterion (elaborator, tactics, `arith`, `auto`, and AI sessions are untrusted and re-checked from scratch by the kernel)
   - Stratified universe hierarchy (`Prop : Type0 : Type1 : ...`)
   - NbE-normalized strict positivity checker
-  - Structural decreasing termination checker
-  - Subsingleton `Prop` elimination and definitional proof irrelevance (`False` and `Eq` into `Type`; `Or` and `Exists` rejected)
-  - Transitive axiom and `sorry` tracking (`--strict` enforces zero axioms)
+  - Structural decreasing & mutual recursion termination checker, 0-axiom `Acc`-based well-founded recursion (`termination_by`), and sound kernel isolation for `partial def` (`K030` / `K031`)
+  - Subsingleton & index-forced `Prop` elimination and definitional proof irrelevance (`False`, `Eq`, and `Acc` into `Type`; `Or` and `Exists` rejected)
+  - Transitive axiom and `sorry` tracking (`--strict` enforces zero axioms; `--total` enforces zero `partial def`)
 - **Verified Code Extraction (`samurai.extract`)**
   - Soundly erases `Prop` types, theorems, `Subset` proof fields, and provably unreachable indexed branches (`Vec.Nil` in `vecHead`)
   - Emits standalone Scala 3 (brace syntax), TypeScript, and JavaScript (ES module) along with a JSON `ExtractionManifest`
@@ -68,6 +68,7 @@ sbt "run serve"
 Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or read directly under `docs/` (`docs/ja/` for Japanese):
 
 - [Getting Started](docs/GETTING_STARTED.md) / [はじめに](docs/ja/GETTING_STARTED.md)
+- [Proofs, Tactics & Ordinary Code](docs/PROOFS_FOR_PROGRAMMERS.md) / [証明・タクティクと通常コードの関係](docs/ja/PROOFS_FOR_PROGRAMMERS.md)
 - [Language Reference](docs/LANGUAGE.md) / [言語リファレンス](docs/ja/LANGUAGE.md)
 - [Tactic Cookbook](docs/TACTICS_COOKBOOK.md) / [タクティク・クックブック](docs/ja/TACTICS_COOKBOOK.md)
 - [Verified Code Extraction](docs/EXTRACTION.md) / [検証済みコード抽出](docs/ja/EXTRACTION.md)
@@ -82,11 +83,11 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 
 - `src/main/scala/samurai/kernel/` — Trusted Computing Base (`Term`, `Env`, `NbE`, `Positivity`, `Termination`, `TypeChecker`, `Pretty`)
 - `src/main/scala/samurai/syntax/` — Whitespace-insensitive Scala 3 brace lexer, AST, and parser
-- `src/main/scala/samurai/elab/` — Bidirectional elaborator, metavariable unification, pattern matrix compiler, `calc` elaboration
+- `src/main/scala/samurai/elab/` — Bidirectional elaborator, metavariable unification, pattern matrix compiler, `calc` & `termination_by` elaboration
 - `src/main/scala/samurai/tactic/` — LCF-style tactics, proof-producing `ArithTactic` (`arith` / `ring`), `ProofSearch` (`auto`, `suggest`)
 - `src/main/scala/samurai/extract/` — `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`)
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — Embedded HTTP server and Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — Branching NDJSON proof server (`ProofSessionServer`) and multi-line REPL
-- `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`)
-- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`)
+- `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`)
+- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`)
 - `docs/` — English and Japanese (`docs/ja/`) documentation and GitHub Pages site

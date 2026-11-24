@@ -45,6 +45,8 @@ def doubleValue(number: Nat): Nat = {
 
 ## 3. 定理と証明の記述スタイル
 
+Proof Samurai における `theorem` は、通常のプログラミングと別世界の記法ではありません。**仕様（`Prop`）を戻り値型とする純粋関数**そのものであり、`by { ... }` タクティクブロックはその関数本体（`match`・再帰・型変換）を組み立てて最終的にカーネルへ渡すための補助構文です。同じ定理を通常の `def` で直接書いたコードとタクティク版の見比べは、第 02 章「証明とタクティクは通常のプログラムと何の関係があるのか」を参照してください。
+
 Proof Samurai では、定理の性質に応じて複数の証明スタイルを使い分けられます。
 
 ### 計算と自動証明（`refl`, `decide`, `arith`, `auto`）
@@ -92,7 +94,6 @@ theorem addZeroRightDemo(value: Nat): value + 0 === value = by {
   induction(value) {
     case Zero => { refl }
     case Succ(pred, ih) => {
-      simp
       rewrite(ih)
       refl
     }
@@ -127,7 +128,8 @@ sbt "run extract stdlib/Sorting.samurai --target scala3 --module VerifiedSorting
 
 ## 次のステップ
 
-- 言語構文の詳細については「言語リファレンス」を参照してください。
+- タクティクと通常の関数・パターンマッチ・再帰との対応関係や本番コードへの効き方は「証明とタクティクは通常のプログラムと何の関係があるのか」を参照してください。
+- 言語構文の詳細（`mutual`・`termination_by`・`partial def` を含む）については「言語リファレンス」を参照してください。
 - ゴールの形からタクティクを引くには「タクティク・クックブック」が便利です。
 - カーネルエラーの意味と修正例については「エラー解決ガイド」を参照してください。
 - リポジトリ内の全 `.samurai` ファイルを一括検証するには `sbt "run verify-project . --strict"` を実行します。

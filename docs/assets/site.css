@@ -106,10 +106,16 @@ a:hover {
 
 .brand {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   color: var(--text);
   text-decoration: none !important;
+}
+
+.brand-icon {
+  display: block;
+  flex-shrink: 0;
+  border-radius: 4px;
 }
 
 .brand-name {

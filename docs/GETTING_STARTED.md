@@ -45,6 +45,8 @@ def doubleValue(number: Nat): Nat = {
 
 ## 3. Proof Styles
 
+In Proof Samurai, a `theorem` is not a separate mathematical language: it is an ordinary pure function whose return type is a specification (`Prop`), and a `by { ... }` tactic block is a helper that builds that function body step by step before the kernel type-checks the result. For side-by-side comparisons of the exact same proof written directly as a `def` vs. with tactics, see **How Proofs & Tactics Relate to Ordinary Programs** (Chapter 02).
+
 Proof Samurai supports several proof styles depending on the theorem.
 
 ### Computation and Automation (`refl`, `decide`, `arith`, `auto`)
@@ -92,7 +94,6 @@ theorem addZeroRightDemo(value: Nat): value + 0 === value = by {
   induction(value) {
     case Zero => { refl }
     case Succ(pred, ih) => {
-      simp
       rewrite(ih)
       refl
     }
@@ -127,7 +128,8 @@ The `--strict` flag ensures that zero axioms and zero `sorry` placeholders appea
 
 ## Next Steps
 
-- See the **Language Reference** for full syntax, operators, and tactic listings.
+- Read **How Proofs & Tactics Relate to Ordinary Programs** to see how every tactic maps to ordinary `match`, recursion, and casts, and how proofs connect to runnable code.
+- See the **Language Reference** for full syntax, operators, `mutual`, `termination_by`, `partial def`, and tactic listings.
 - Use the **Tactic Cookbook** to look up tactics by goal shape.
 - Consult the **Error & Troubleshooting Guide** when the kernel rejects a definition or proof.
 - Run `sbt "run verify-project . --strict"` to verify all standard library and example files.

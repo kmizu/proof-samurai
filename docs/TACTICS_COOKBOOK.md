@@ -2,25 +2,27 @@
 
 Look up tactics by the shape of your current goal rather than memorizing an alphabetical list.
 
+Every tactic below generates an ordinary kernel-checked function term (lambdas, `match` expressions, constructor calls, recursive calls, or type-safe equality casts). See **How Proofs & Tactics Relate to Ordinary Programs** (Chapter 02) for side-by-side comparisons of direct `def` proofs vs. `by { ... }` tactic scripts.
+
 ## Reference by Goal Shape
 
-| Current Goal / Context | First Tactic to Try | Behavior |
-|---|---|---|
-| `a === b` (concrete values, e.g. `2 + 3 === 5`) | `refl` or `decide` | Normalizes both sides and closes if equal |
-| `a === b` (`Nat` with `+`, `*`, `0`, `Succ`) | `arith` (or `ring`) | Proves commutative semiring `Nat` identities with 0 axioms |
-| `a === b` (with `@simp` lemmas or definitions) | `simp` or `simp(*)` | Unfolds definitions, applies `@simp` lemmas, and (`*`) local equalities |
-| `f(a) === f(b)` | `congr` | Reduces to proving `a === b` |
-| `a === c` (via an intermediate expression `b`) | `trans(b)` or `calc { ... }` | Splits into `a === b` and `b === c` |
-| `a === b` (have hypothesis `h: b === a`) | `symmetry` | Flips the goal to `b === a` |
-| `forall (x: A) => ...` or `P => Q` | `intro(x)` / `intros(x, y)` | Moves binders or premises into local hypotheses |
-| `P /\ Q` | `split` | Splits into two subgoals: `P` and `Q` |
-| `P \/ Q` | `left` or `right` | Selects which side of the disjunction to prove |
-| `exists (x: A) => P(x)` | `exists(witness)` | Supplies a concrete witness |
-| Propositional logic (`=>`, `/\`, `\/`, `~`) | `auto` (or `samurai`) | Performs bounded search and synthesizes a kernel-checked term |
-| Conflicting constructor equality `h: 0 === Nat.Succ(n)` or `true === false` | `discriminate(h)` | Closes any goal by constructor disjointness |
-| Same-constructor equality `h: Nat.Succ(a) === Nat.Succ(b)` | `injection(h, eqAB)` | Extracts `eqAB : a === b` into hypotheses |
-| `h: False` or both `P` and `~P` in hypotheses | `contradiction` | Closes any goal immediately |
-| Proving the goal by deriving a contradiction | `exfalso` | Replaces the goal with `False` |
+| Current Goal / Context | First Tactic to Try | Programming Equivalent | Behavior |
+|---|---|---|---|
+| `a === b` (concrete values, e.g. `2 + 3 === 5`) | `refl` or `decide` | `Eq.Refl` (compile-time eval) | Normalizes both sides and closes if equal |
+| `a === b` (`Nat` with `+`, `*`, `0`, `Succ`) | `arith` (or `ring`) | Verified boilerplate generator | Proves commutative semiring `Nat` identities with 0 axioms |
+| `a === b` (with `@simp` lemmas or definitions) | `simp` or `simp(*)` | Verified boilerplate generator | Unfolds definitions, applies `@simp` lemmas, and (`*`) local equalities |
+| `f(a) === f(b)` | `congr` | `congrArg(f, ...)` | Reduces to proving `a === b` |
+| `a === c` (via an intermediate expression `b`) | `trans(b)` or `calc { ... }` | Chained equality casts | Splits into `a === b` and `b === c` |
+| `a === b` (have hypothesis `h: b === a`) | `symmetry` | `eqSym(...)` | Flips the goal to `b === a` |
+| `forall (x: A) => ...` or `P => Q` | `intro(x)` / `intros(x, y)` | `(x, y) => ...` | Moves binders or premises into local hypotheses |
+| `P /\ Q` | `split` | `And.Intro(?, ?)` (2-tuple) | Splits into two subgoals: `P` and `Q` |
+| `P \/ Q` | `left` or `right` | `Or.Inl(?)` / `Or.Inr(?)` (`Either`) | Selects which side of the disjunction to prove |
+| `exists (x: A) => P(x)` | `exists(witness)` | `Exists.Intro(w, ?)` (value + proof pair) | Supplies a concrete witness |
+| Propositional logic (`=>`, `/\`, `\/`, `~`) | `auto` (or `samurai`) | Verified boilerplate generator | Performs bounded search and synthesizes a kernel-checked term |
+| Conflicting constructor equality `h: 0 === Nat.Succ(n)` or `true === false` | `discriminate(h)` | Unreachable branch (`Nothing`) | Closes any goal by constructor disjointness |
+| Same-constructor equality `h: Nat.Succ(a) === Nat.Succ(b)` | `injection(h, eqAB)` | Constructor field extraction | Extracts `eqAB : a === b` into hypotheses |
+| `h: False` or both `P` and `~P` in hypotheses | `contradiction` | Exhaustive match on `False` | Closes any goal immediately |
+| Proving the goal by deriving a contradiction | `exfalso` | `absurd(falseProof)` | Replaces the goal with `False` |
 
 ## Pattern 1: Chained Rewriting (`rewrite` and `rewriteRev`)
 

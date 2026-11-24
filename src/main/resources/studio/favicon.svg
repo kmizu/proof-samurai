@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Proof Samurai">
+  <rect x="2" y="2" width="60" height="60" rx="12" fill="#1b4b7a"/>
+  <rect x="5" y="5" width="54" height="54" rx="9" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.5"/>
+  <path d="M 14 12 L 28 21 L 32 14 L 36 21 L 50 12 L 45 25 L 32 22 L 19 25 Z" fill="#e5b85c"/>
+  <path d="M 17 29 H 24 V 37.5 H 49 L 44 44.5 H 24 V 53 H 17 Z" fill="#ffffff"/>
+</svg>

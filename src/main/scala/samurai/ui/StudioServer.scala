@@ -74,6 +74,7 @@ object StudioServer {
           case "/" | "/index.html" => "/studio/index.html"
           case "/styles.css"       => "/studio/styles.css"
           case "/app.js"           => "/studio/app.js"
+          case "/favicon.svg"      => "/studio/favicon.svg"
           case _                   => ""
         }
         if (resourcePath.isEmpty) {
@@ -87,6 +88,7 @@ object StudioServer {
             val contentType =
               if (resourcePath.endsWith(".html")) "text/html; charset=utf-8"
               else if (resourcePath.endsWith(".css")) "text/css; charset=utf-8"
+              else if (resourcePath.endsWith(".svg")) "image/svg+xml; charset=utf-8"
               else "application/javascript; charset=utf-8"
             sendBytes(exchange, 200, contentType, bytes)
           }
@@ -299,24 +301,26 @@ object StudioServer {
           if (isJapanese) {
             List(
               ("getting-started", "01 はじめに", "docs/ja/GETTING_STARTED.md"),
-              ("language", "02 言語リファレンス", "docs/ja/LANGUAGE.md"),
-              ("tactics", "03 タクティク・クックブック", "docs/ja/TACTICS_COOKBOOK.md"),
-              ("extraction", "04 検証済みコード抽出", "docs/ja/EXTRACTION.md"),
-              ("troubleshooting", "05 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
-              ("kernel", "06 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
-              ("ai-guide", "07 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "08 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
+              ("proofs-for-programmers", "02 証明・タクティクと通常コードの関係", "docs/ja/PROOFS_FOR_PROGRAMMERS.md"),
+              ("language", "03 言語リファレンス", "docs/ja/LANGUAGE.md"),
+              ("tactics", "04 タクティク・クックブック", "docs/ja/TACTICS_COOKBOOK.md"),
+              ("extraction", "05 検証済みコード抽出", "docs/ja/EXTRACTION.md"),
+              ("troubleshooting", "06 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
+              ("kernel", "07 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
+              ("ai-guide", "08 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "09 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
             )
           } else {
             List(
               ("getting-started", "01 Getting Started", "docs/GETTING_STARTED.md"),
-              ("language", "02 Language Reference", "docs/LANGUAGE.md"),
-              ("tactics", "03 Tactic Cookbook", "docs/TACTICS_COOKBOOK.md"),
-              ("extraction", "04 Verified Code Extraction", "docs/EXTRACTION.md"),
-              ("troubleshooting", "05 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
-              ("kernel", "06 Trusted Kernel Architecture", "docs/KERNEL.md"),
-              ("ai-guide", "07 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "08 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
+              ("proofs-for-programmers", "02 Proofs, Tactics & Ordinary Code", "docs/PROOFS_FOR_PROGRAMMERS.md"),
+              ("language", "03 Language Reference", "docs/LANGUAGE.md"),
+              ("tactics", "04 Tactic Cookbook", "docs/TACTICS_COOKBOOK.md"),
+              ("extraction", "05 Verified Code Extraction", "docs/EXTRACTION.md"),
+              ("troubleshooting", "06 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
+              ("kernel", "07 Trusted Kernel Architecture", "docs/KERNEL.md"),
+              ("ai-guide", "08 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "09 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
             )
           }
         val loaded = docFiles.flatMap { case (id, title, relPath) =>

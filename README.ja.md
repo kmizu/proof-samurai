@@ -1,4 +1,4 @@
-# Proof Samurai (`proof-samurai`)
+# <img src="docs/favicon.svg" alt="" width="28" height="28" align="absmiddle" /> Proof Samurai (`proof-samurai`)
 
 [English](README.md) | [日本語](README.ja.md) | [ドキュメント (GitHub Pages / 日本語)](https://kmizu.github.io/proof-samurai/#ja/home)
 
@@ -9,14 +9,14 @@
 ## 概要
 
 - **インデント非依存の Scala 3 ブレース構文**
-  `enum`、`case class`、`def`、`val`、`theorem`、`[1, 2, 3]` リストリテラル、`match { case ... => ... }`、`if (...) { ... } else { ... }`、`calc { ... }` 等式推論、ドット射影（`pair.first`）、UFCS（`items.length`）、`by { ... }` タクティクブロックをサポートします。すべてのブロックは `{ ... }` で明示的に囲みます。
+  `enum`、`case class`、`def`、`mutual`、`termination_by` / `decreasing_by`、隔離された `partial def`、`val`、`theorem`、`[1, 2, 3]` リストリテラル、`match { case ... => ... }`、`if (...) { ... } else { ... }`、`calc { ... }` 等式推論、ドット射影（`pair.first`）、UFCS（`items.length`）、`by { ... }` タクティクブロックをサポートします。すべてのブロックは `{ ... }` で明示的に囲みます。
 - **小規模な信頼カーネル（`samurai.kernel`）**
   - de Bruijn 基準に基づく De Bruijn インデックス型 Martin-Löf / CIC コア（エラボレータ、タクティク、`arith`、`auto`、AI セッションはいずれも非信頼扱いとし、最終的にカーネルが最初から型検査）
   - 累積的宇宙階層（`Prop : Type0 : Type1 : ...`）
   - NbE 正規化を伴う厳密正性検査
-  - 構造的減少による停止性検査
-  - Subsingleton `Prop` 除去規則と定義的証明無関係性（`False` / `Eq` の `Type` 除去を許可、`Or` / `Exists` は拒否）
-  - 公理・`sorry` の推移的追跡（`--strict` で公理 0 を強制）
+  - 構造的減少・相互再帰の停止性検査、公理 0 の `Acc` ベース整礎再帰（`termination_by`）、および `partial def` の健全な隔離（`K030` / `K031`）
+  - Subsingleton・添字強制 `Prop` 除去規則と定義的証明無関係性（`False` / `Eq` / `Acc` の `Type` 除去を許可、`Or` / `Exists` は拒否）
+  - 公理・`sorry` の推移的追跡（`--strict` で公理 0、`--total` で `partial def` 禁止を強制）
 - **検証済みコード抽出（`samurai.extract`）**
   - `Prop` 型、定理、`Subset` の証明フィールド、到達不能な添字付き分岐（`vecHead` の `Vec.Nil` など）を健全に消去
   - スタンドアロンの Scala 3（ブレース構文）、TypeScript、JavaScript（ES モジュール）および JSON 形式の `ExtractionManifest` を出力
@@ -68,6 +68,7 @@ sbt "run serve"
 Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 
 - [はじめに](docs/ja/GETTING_STARTED.md)
+- [証明・タクティクと通常コードの関係](docs/ja/PROOFS_FOR_PROGRAMMERS.md)
 - [言語リファレンス](docs/ja/LANGUAGE.md)
 - [タクティク・クックブック](docs/ja/TACTICS_COOKBOOK.md)
 - [検証済みコード抽出](docs/ja/EXTRACTION.md)
@@ -82,11 +83,11 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 
 - `src/main/scala/samurai/kernel/` — 信頼カーネル（`Term`, `Env`, `NbE`, `Positivity`, `Termination`, `TypeChecker`, `Pretty`）
 - `src/main/scala/samurai/syntax/` — インデント非依存 Scala 3 ブレース構文の字句解析・AST・パーサ
-- `src/main/scala/samurai/elab/` — 双方向エラボレータ、メタ変数単一化、パターンマッチコンパイラ、`calc` 展開
+- `src/main/scala/samurai/elab/` — 双方向エラボレータ、メタ変数単一化、パターンマッチコンパイラ、`calc`・`termination_by` 展開
 - `src/main/scala/samurai/tactic/` — LCF スタイルタクティク、証明生成型 `ArithTactic`（`arith` / `ring`）、`ProofSearch`（`auto`, `suggest`）
 - `src/main/scala/samurai/extract/` — `Prop`・型消去 IR およびコード生成器（`Scala3Emitter`, `TsEmitter`, `JsEmitter`）
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — 組み込み HTTP サーバと Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — 分岐対応 NDJSON 証明サーバ（`ProofSessionServer`）と複数行 REPL
-- `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`）
-- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`）
+- `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`）
+- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`）
 - `docs/` — 英語・日本語（`docs/ja/`）ドキュメントおよび GitHub Pages サイト

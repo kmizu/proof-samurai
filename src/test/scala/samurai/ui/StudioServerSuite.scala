@@ -37,6 +37,10 @@ class StudioServerSuite extends FunSuite {
       val jsRes = httpGet(s"${server.url}/app.js")
       assertEquals(jsRes.statusCode(), 200)
 
+      val iconRes = httpGet(s"${server.url}/favicon.svg")
+      assertEquals(iconRes.statusCode(), 200)
+      assert(iconRes.body().contains("<svg"))
+
       // 2. Curated examples & stdlib
       val exJson = Json.parse(httpGet(s"${server.url}/api/examples").body()).toOption.get
       assertEquals(exJson.field("ok"), Some(Json.Bool(true)))
@@ -46,12 +50,18 @@ class StudioServerSuite extends FunSuite {
       val docsEnJson = Json.parse(httpGet(s"${server.url}/api/docs").body()).toOption.get
       assertEquals(docsEnJson.field("ok"), Some(Json.Bool(true)))
       assertEquals(docsEnJson.field("lang"), Some(Json.Str("en")))
-      assert(docsEnJson.field("docs").flatMap(_.asArr).exists(_.length == 8))
+      assert(docsEnJson.field("docs").flatMap(_.asArr).exists(_.length == 9))
+      assert(
+        docsEnJson
+          .field("docs")
+          .flatMap(_.asArr)
+          .exists(_.exists(_.field("id") == Some(Json.Str("proofs-for-programmers"))))
+      )
 
       val docsJaJson = Json.parse(httpGet(s"${server.url}/api/docs?lang=ja").body()).toOption.get
       assertEquals(docsJaJson.field("ok"), Some(Json.Bool(true)))
       assertEquals(docsJaJson.field("lang"), Some(Json.Str("ja")))
-      assert(docsJaJson.field("docs").flatMap(_.asArr).exists(_.length == 8))
+      assert(docsJaJson.field("docs").flatMap(_.asArr).exists(_.length == 9))
       assert(
         docsJaJson
           .field("docs")
