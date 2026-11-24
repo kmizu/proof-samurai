@@ -6,7 +6,7 @@ import scala.collection.mutable
 import scala.util.boundary
 import scala.util.boundary.break
 import samurai.elab.{ElabEnv, Elaborator, MetaContext}
-import samurai.extract.{Erasure, JsEmitter, Scala3Emitter, TsEmitter}
+import samurai.extract.{Erasure, HaskellEmitter, JsEmitter, OCamlEmitter, Scala3Emitter, TsEmitter}
 import samurai.kernel.*
 import samurai.syntax.Parser
 import samurai.tactic.{ProofGoal, ProofSearch, ProofState, Tactics}
@@ -488,13 +488,16 @@ final class ProofSession(initialSearchPaths: List[Path] = List(Paths.get("."), P
     val target = params.field("target").flatMap(_.asString).getOrElse("scala3").toLowerCase
     val moduleName = params.field("moduleName").flatMap(_.asString).getOrElse("ExtractedSamurai")
     val requireAxiomFree = params.field("requireAxiomFree").flatMap(_.asBool).getOrElse(false)
+    val requireTotal = params.field("requireTotal").flatMap(_.asBool).getOrElse(false)
 
-    Erasure.extract(currentEnv, Erasure.ExtractionOptions(moduleName, requireAxiomFree)) match {
+    Erasure.extract(currentEnv, Erasure.ExtractionOptions(moduleName, requireAxiomFree, requireTotal)) match {
       case Left(err) => Left(("EXT001", err))
       case Right(module) =>
         val code = target match {
           case "ts" | "typescript" => TsEmitter.emit(module)
           case "js" | "javascript" => JsEmitter.emit(module)
+          case "hs" | "haskell"    => HaskellEmitter.emit(module)
+          case "ml" | "ocaml"      => OCamlEmitter.emit(module)
           case _                   => Scala3Emitter.emit(module)
         }
         Right(

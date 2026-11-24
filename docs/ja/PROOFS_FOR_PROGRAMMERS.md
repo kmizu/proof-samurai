@@ -151,7 +151,7 @@ def sortVerified(items: List[Nat]):
   Subset[List[Nat], (output: List[Nat]) => IsSortedPermutation(items, output)]
 ```
 
-しかし Scala 3 / TypeScript / JavaScript へ抽出すると、`Prop` に属する証明項と定理は**すべて 0 バイトに消去**され、実行時コードには純粋なアルゴリズムだけが残ります。
+しかし Scala 3 / TypeScript / JavaScript / Haskell / OCaml へ抽出すると、`Prop` に属する証明項と定理は**すべて 0 バイトに消去**され、実行時コードには純粋なアルゴリズムだけが残ります。
 
 ```scala
 // 抽出後の Scala 3 コード（証明フィールドは完全に消去される）

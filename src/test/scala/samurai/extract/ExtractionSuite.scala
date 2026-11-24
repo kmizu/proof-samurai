@@ -228,4 +228,118 @@ class ExtractionSuite extends FunSuite {
       s"Unexpected runtime output: $runOut"
     )
   }
+
+  private def hasBalancedParens(code: String): Boolean = {
+    var depth = 0
+    var inStr = false
+    var escaped = false
+    var i = 0
+    while (i < code.length) {
+      val ch = code.charAt(i)
+      if (inStr) {
+        if (escaped) escaped = false
+        else if (ch == '\\') escaped = true
+        else if (ch == '"') inStr = false
+      } else {
+        if (ch == '"') inStr = true
+        else if (ch == '(') depth += 1
+        else if (ch == ')') {
+          depth -= 1
+          if (depth < 0) return false
+        }
+      }
+      i += 1
+    }
+    depth == 0 && !inStr
+  }
+
+  test("extracts verified Sorting, Vec, mutual recursion, and well-founded algorithms to clean Haskell and OCaml") {
+    val combinedSource =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import List.*
+        |import Vec.*
+        |import Tree.*
+        |import Sorting.*
+        |import WellFounded.*
+        |
+        |enum FnBox: Type {
+        |  case Mk(callback: Nat => Nat)
+        |}
+        |
+        |mutual {
+        |  def isEvenCheck(n: Nat): Bool = {
+        |    n match {
+        |      case Nat.Zero => true
+        |      case Nat.Succ(p) => isOddCheck(p)
+        |    }
+        |  }
+        |  def isOddCheck(n: Nat): Bool = {
+        |    n match {
+        |      case Nat.Zero => false
+        |      case Nat.Succ(p) => isEvenCheck(p)
+        |    }
+        |  }
+        |}
+        |
+        |def keywordSafe(data: Nat, where: Nat, mod: Nat, fun: Nat): Nat = {
+        |  add(add(data, where), add(mod, fun))
+        |}
+      """.stripMargin
+
+    val env = Elaborator
+      .checkSource("FunctionalTargets.samurai", combinedSource, ElabEnv(searchPaths = searchPaths))
+      .fold(d => fail(d.formatHuman()), identity)
+
+    val extracted = Erasure
+      .extract(env, Erasure.ExtractionOptions(moduleName = "VerifiedFunctional", requireAxiomFree = true, requireTotal = true))
+      .fold(err => fail(err), identity)
+
+    // --- Haskell assertions ---
+    val hsCode = HaskellEmitter.emit(extracted)
+    assert(hasBalancedParens(hsCode), s"Unbalanced parens in Haskell output:\n$hsCode")
+    assert(hsCode.contains("{-# LANGUAGE NoImplicitPrelude #-}"))
+    assert(hsCode.contains("module VerifiedFunctional where"))
+    assert(hsCode.contains("import qualified Prelude as P"))
+    assert(hsCode.contains("data Nat\n  = Nat_Zero\n  | Nat_Succ Nat\n  deriving (P.Eq, P.Show)"))
+    assert(hsCode.contains("List_Nil") && hsCode.contains("Vec_Nil"), "List and Vec constructors must be clash-free")
+    assert(hsCode.contains("Pair_Mk") && hsCode.contains("Subset_Mk"), "Pair and Subset constructors must be clash-free")
+    // Higher-order ADT must omit deriving (P.Eq, P.Show)
+    assert(hsCode.contains("data FnBox\n  = FnBox_Mk (Nat -> Nat)\n\n"), s"FnBox must omit deriving:\n$hsCode")
+    assert(hsCode.contains("insertionSort :: List Nat -> List Nat"))
+    assert(hsCode.contains("quickSort :: List Nat -> List Nat"))
+    assert(hsCode.contains("gcd :: Nat -> Nat -> Nat"))
+    assert(hsCode.contains("vecHead :: Nat -> Vec element -> element"))
+    assert(hsCode.contains("P.error \"Proof Samurai unreachable:"))
+    assert(hsCode.contains("keywordSafe data_ where_ mod fun ="))
+    // Complete Prop erasure
+    assert(!hsCode.contains("data Eq\n") && !hsCode.contains("data Acc"))
+    assert(!hsCode.contains("insertionSortIsSorted"))
+    assert(!hsCode.contains("natWf"))
+
+    // --- OCaml assertions ---
+    val mlCode = OCamlEmitter.emit(extracted)
+    assert(hasBalancedParens(mlCode), s"Unbalanced parens in OCaml output:\n$mlCode")
+    assert(mlCode.contains("type nat =\n  | Nat_Zero\n  | Nat_Succ of nat"))
+    assert(mlCode.contains("type ('first, 'second) pair =\n  | Pair_Mk of 'first * 'second"))
+    assert(mlCode.contains("type 'element vec =\n  | Vec_Nil\n  | Vec_Cons of nat * 'element * 'element vec"))
+    assert(mlCode.contains("type fnBox =\n  | FnBox_Mk of (nat -> nat)"))
+    // Mutual recursion grouped as `let rec ... and ...`
+    assert(mlCode.contains("let rec isEvenCheck (n : nat) : bool ="), s"Missing mutual let rec:\n$mlCode")
+    assert(mlCode.contains("and isOddCheck (n : nat) : bool ="), s"Missing mutual `and`:\n$mlCode")
+    // Zero-arg unreachable `absurd` is thunked over Stdlib.unit so module load never crashes
+    assert(mlCode.contains("let absurd (() : Stdlib.unit) : 'result ="), s"absurd must be thunked in OCaml:\n$mlCode")
+    assert(mlCode.contains("let rec insertionSort (items : nat list) : nat list ="))
+    assert(mlCode.contains("let rec quickSort_wf (items : nat list) : nat list ="))
+    assert(mlCode.contains("let quickSort (items : nat list) : nat list ="))
+    assert(mlCode.contains("let rec gcd_wf (left : nat) (right : nat) : nat ="))
+    assert(mlCode.contains("let gcd (left : nat) (right : nat) : nat ="))
+    assert(mlCode.contains("failwith \"Proof Samurai unreachable:"))
+    assert(mlCode.contains("let keywordSafe (data : nat) (where : nat) (mod_ : nat) (fun_ : nat) : nat ="))
+    // Complete Prop erasure
+    assert(!mlCode.contains("type acc") && !mlCode.contains("type eq"))
+    assert(!mlCode.contains("insertionSortIsSorted"))
+    assert(!mlCode.contains("natWf"))
+  }
 }

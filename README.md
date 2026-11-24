@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md) | [Documentation (GitHub Pages)](https://kmizu.github.io/proof-samurai/)
 
-A dependently-typed proof assistant in whitespace-insensitive Scala 3 brace syntax, with a small trusted kernel and sound proof-erasing code extraction to Scala 3, TypeScript, and JavaScript.
+A dependently-typed proof assistant in whitespace-insensitive Scala 3 brace syntax, with a small trusted kernel and sound proof-erasing code extraction to Scala 3, TypeScript, JavaScript, Haskell, and OCaml.
 
 ---
 
@@ -19,7 +19,7 @@ A dependently-typed proof assistant in whitespace-insensitive Scala 3 brace synt
   - Transitive axiom and `sorry` tracking (`--strict` enforces zero axioms; `--total` enforces zero `partial def`)
 - **Verified Code Extraction (`samurai.extract`)**
   - Soundly erases `Prop` types, theorems, `Subset` proof fields, and provably unreachable indexed branches (`Vec.Nil` in `vecHead`)
-  - Emits standalone Scala 3 (brace syntax), TypeScript, and JavaScript (ES module) along with a JSON `ExtractionManifest`
+  - Emits standalone Scala 3 (brace syntax), TypeScript, JavaScript (ES module), Haskell (`NoImplicitPrelude`), and OCaml (with SCC `let rec ... and ...`) along with a JSON `ExtractionManifest`
 - **Local Web IDE & AI Proof Server (`samurai.ui`, `samurai.ai`)**
   - **Proof Samurai Studio** (`sbt "run studio"`): local Web IDE with live kernel infoview, `?hole` inspection, branching Interactive Proof Tree, code extractor, and bilingual docs
   - **NDJSON Proof Server** (`sbt "run serve"`): low-token folded goals, immutable branching/backtracking (`stateId`), `proveGoal`, `batchStep`, `inspectHoles`, `listSymbols`, and `getProofTrace`
@@ -51,10 +51,12 @@ sbt "run goals draft.samurai --json"
 # Search verified definitions and theorems
 sbt "run search stdlib/Sorting.samurai sort"
 
-# Extract verified Insertion Sort to Scala 3, TypeScript, or JavaScript
+# Extract verified Insertion Sort to Scala 3, TypeScript, JavaScript, Haskell, or OCaml
 sbt "run extract stdlib/Sorting.samurai --target scala3 --module VerifiedSorting --strict"
 sbt "run extract stdlib/Sorting.samurai --target ts --strict"
 sbt "run extract stdlib/Sorting.samurai --target js --strict"
+sbt "run extract stdlib/Sorting.samurai --target haskell --module VerifiedSorting --strict"
+sbt "run extract stdlib/Sorting.samurai --target ocaml --module VerifiedSorting --strict"
 
 # Interactive REPL or NDJSON proof server
 sbt "run repl"
@@ -85,7 +87,7 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - `src/main/scala/samurai/syntax/` — Whitespace-insensitive Scala 3 brace lexer, AST, and parser
 - `src/main/scala/samurai/elab/` — Bidirectional elaborator, metavariable unification, pattern matrix compiler, `calc` & `termination_by` elaboration
 - `src/main/scala/samurai/tactic/` — LCF-style tactics, proof-producing `ArithTactic` (`arith` / `ring`), `ProofSearch` (`auto`, `suggest`)
-- `src/main/scala/samurai/extract/` — `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`)
+- `src/main/scala/samurai/extract/` — `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`)
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — Embedded HTTP server and Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — Branching NDJSON proof server (`ProofSessionServer`) and multi-line REPL
 - `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`)

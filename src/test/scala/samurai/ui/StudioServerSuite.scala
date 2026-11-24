@@ -120,7 +120,7 @@ class StudioServerSuite extends FunSuite {
       assertEquals(checkBad.field("ok"), Some(Json.Bool(false)))
       assert(checkBad.field("kindHint").flatMap(_.asString).exists(_.contains("Termination safety")))
 
-      // 7. Live /api/extract to Scala 3
+      // 7. Live /api/extract to Scala 3, Haskell, and OCaml
       val extRes = Json
         .parse(
           httpPostJson(
@@ -136,6 +136,38 @@ class StudioServerSuite extends FunSuite {
         .get
       assertEquals(extRes.field("ok"), Some(Json.Bool(true)))
       assert(extRes.field("code").flatMap(_.asString).exists(_.contains("def doubleN")))
+
+      val extHs = Json
+        .parse(
+          httpPostJson(
+            s"${server.url}/api/extract",
+            Json.obj(
+              "source" -> Json.Str("import Prelude.*\nimport Nat.*\ndef doubleN(n: Nat): Nat = n + n"),
+              "target" -> Json.Str("haskell"),
+              "strict" -> Json.Bool(true)
+            )
+          ).body()
+        )
+        .toOption
+        .get
+      assertEquals(extHs.field("ok"), Some(Json.Bool(true)))
+      assert(extHs.field("code").flatMap(_.asString).exists(_.contains("doubleN :: Nat -> Nat")))
+
+      val extMl = Json
+        .parse(
+          httpPostJson(
+            s"${server.url}/api/extract",
+            Json.obj(
+              "source" -> Json.Str("import Prelude.*\nimport Nat.*\ndef doubleN(n: Nat): Nat = n + n"),
+              "target" -> Json.Str("ocaml"),
+              "strict" -> Json.Bool(true)
+            )
+          ).body()
+        )
+        .toOption
+        .get
+      assertEquals(extMl.field("ok"), Some(Json.Bool(true)))
+      assert(extMl.field("code").flatMap(_.asString).exists(_.contains("let doubleN (n : nat) : nat =")))
 
       // 8. Live /api/proof interactive session
       val startProof = Json

@@ -2,7 +2,7 @@
 
 [English](README.md) | [日本語](README.ja.md) | [ドキュメント (GitHub Pages / 日本語)](https://kmizu.github.io/proof-samurai/#ja/home)
 
-インデント非依存の Scala 3 ブレース構文を採用した依存型証明支援系です。小規模な信頼カーネル（Trusted Kernel）による厳密な検証と、証明項を完全に消去する Scala 3 / TypeScript / JavaScript へのコード抽出機能を備えています。
+インデント非依存の Scala 3 ブレース構文を採用した依存型証明支援系です。小規模な信頼カーネル（Trusted Kernel）による厳密な検証と、証明項を完全に消去する Scala 3 / TypeScript / JavaScript / Haskell / OCaml へのコード抽出機能を備えています。
 
 ---
 
@@ -19,7 +19,7 @@
   - 公理・`sorry` の推移的追跡（`--strict` で公理 0、`--total` で `partial def` 禁止を強制）
 - **検証済みコード抽出（`samurai.extract`）**
   - `Prop` 型、定理、`Subset` の証明フィールド、到達不能な添字付き分岐（`vecHead` の `Vec.Nil` など）を健全に消去
-  - スタンドアロンの Scala 3（ブレース構文）、TypeScript、JavaScript（ES モジュール）および JSON 形式の `ExtractionManifest` を出力
+  - スタンドアロンの Scala 3（ブレース構文）、TypeScript、JavaScript（ES モジュール）、Haskell（`NoImplicitPrelude`）、OCaml（SCC による `let rec ... and ...` 生成）および JSON 形式の `ExtractionManifest` を出力
 - **ローカル Web IDE と AI 証明サーバ（`samurai.ui`, `samurai.ai`）**
   - **Proof Samurai Studio**（`sbt "run studio"`）: ライブカーネル検証、`?hole` 検査、分岐可能な対話的証明ツリー、コード抽出、日英ドキュメントを備えた Web IDE
   - **NDJSON 証明サーバ**（`sbt "run serve"`）: 低トークン畳み込みゴール、不変状態分岐（`stateId`）、`proveGoal`、`batchStep`、`inspectHoles`、`listSymbols`、`getProofTrace`
@@ -51,10 +51,12 @@ sbt "run goals draft.samurai --json"
 # 検証済み定義・定理の検索
 sbt "run search stdlib/Sorting.samurai sort"
 
-# 検証済み挿入ソートを Scala 3 / TypeScript / JavaScript へ抽出
+# 検証済み挿入ソートを Scala 3 / TypeScript / JavaScript / Haskell / OCaml へ抽出
 sbt "run extract stdlib/Sorting.samurai --target scala3 --module VerifiedSorting --strict"
 sbt "run extract stdlib/Sorting.samurai --target ts --strict"
 sbt "run extract stdlib/Sorting.samurai --target js --strict"
+sbt "run extract stdlib/Sorting.samurai --target haskell --module VerifiedSorting --strict"
+sbt "run extract stdlib/Sorting.samurai --target ocaml --module VerifiedSorting --strict"
 
 # 対話型 REPL / AI 向け NDJSON サーバ
 sbt "run repl"
@@ -85,7 +87,7 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 - `src/main/scala/samurai/syntax/` — インデント非依存 Scala 3 ブレース構文の字句解析・AST・パーサ
 - `src/main/scala/samurai/elab/` — 双方向エラボレータ、メタ変数単一化、パターンマッチコンパイラ、`calc`・`termination_by` 展開
 - `src/main/scala/samurai/tactic/` — LCF スタイルタクティク、証明生成型 `ArithTactic`（`arith` / `ring`）、`ProofSearch`（`auto`, `suggest`）
-- `src/main/scala/samurai/extract/` — `Prop`・型消去 IR およびコード生成器（`Scala3Emitter`, `TsEmitter`, `JsEmitter`）
+- `src/main/scala/samurai/extract/` — `Prop`・型消去 IR およびコード生成器（`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`）
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — 組み込み HTTP サーバと Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — 分岐対応 NDJSON 証明サーバ（`ProofSessionServer`）と複数行 REPL
 - `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`）

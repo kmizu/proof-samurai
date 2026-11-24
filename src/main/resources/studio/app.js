@@ -675,7 +675,8 @@
     });
     $("btn-download-extract").addEventListener("click", () => {
       if (!state.lastExtractedCode) return;
-      const ext = state.extractTarget === "ts" ? "ts" : state.extractTarget === "js" ? "mjs" : "scala";
+      const extMap = { ts: "ts", js: "mjs", haskell: "hs", ocaml: "ml", scala3: "scala" };
+      const ext = extMap[state.extractTarget] || "scala";
       const blob = new Blob([state.lastExtractedCode], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);

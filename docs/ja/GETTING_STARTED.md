@@ -1,6 +1,6 @@
 # はじめに
 
-**Proof Samurai** は、Scala 3 のブレース構文（インデント非依存）で関数型プログラムを記述し、小規模な信頼カーネル（Trusted Kernel）によって性質を形式検証したうえで、すべての証明項を消去した **Scala 3 / TypeScript / JavaScript** コードを抽出できる依存型証明支援系です。
+**Proof Samurai** は、Scala 3 のブレース構文（インデント非依存）で関数型プログラムを記述し、小規模な信頼カーネル（Trusted Kernel）によって性質を形式検証したうえで、すべての証明項を消去した **Scala 3 / TypeScript / JavaScript / Haskell / OCaml** コードを抽出できる依存型証明支援系です。
 
 Scala、TypeScript、Rust、Haskell などの静的型付き関数型言語の基本的な知識があれば、型理論の専門知識がなくても使い始められます。
 

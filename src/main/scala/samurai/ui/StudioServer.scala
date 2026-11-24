@@ -8,7 +8,7 @@ import java.util.UUID
 import java.util.concurrent.{ConcurrentHashMap, Executors}
 import samurai.ai.ProofSession
 import samurai.elab.{ElabEnv, Elaborator}
-import samurai.extract.{Erasure, JsEmitter, Scala3Emitter, TsEmitter}
+import samurai.extract.{Erasure, HaskellEmitter, JsEmitter, OCamlEmitter, Scala3Emitter, TsEmitter}
 import samurai.kernel.Pretty
 import samurai.tactic.{ProofGoal, ProofSearch}
 import samurai.util.Json
@@ -241,6 +241,8 @@ object StudioServer {
                     val code = target match {
                       case "ts" | "typescript" => TsEmitter.emit(module)
                       case "js" | "javascript" => JsEmitter.emit(module)
+                      case "hs" | "haskell"    => HaskellEmitter.emit(module)
+                      case "ml" | "ocaml"      => OCamlEmitter.emit(module)
                       case _                   => Scala3Emitter.emit(module)
                     }
                     sendJson(

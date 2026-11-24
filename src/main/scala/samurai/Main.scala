@@ -3,7 +3,7 @@ package samurai
 import java.nio.file.{Files, Path, Paths}
 import samurai.ai.{ProofSessionServer, Repl}
 import samurai.elab.{ElabEnv, Elaborator}
-import samurai.extract.{Erasure, JsEmitter, Scala3Emitter, TsEmitter}
+import samurai.extract.{Erasure, HaskellEmitter, JsEmitter, OCamlEmitter, Scala3Emitter, TsEmitter}
 import samurai.kernel.Pretty
 import samurai.tactic.{ProofGoal, ProofSearch}
 import samurai.ui.StudioServer
@@ -54,7 +54,7 @@ object Main {
         |  samurai check <file.samurai> [--strict] [--json]
         |  samurai goals <file.samurai> [--json]
         |  samurai verify-project [dir] [--strict] [--json]
-        |  samurai extract <file.samurai> [--target scala3|ts|js] [--module Name] [--out <path>] [--strict] [--json]
+        |  samurai extract <file.samurai> [--target scala3|ts|js|haskell|ocaml] [--module Name] [--out <path>] [--strict] [--total] [--json]
         |  samurai search <file.samurai> <query> [--json]
         |  samurai serve                  Start AI-native NDJSON interactive proof server (stdin/stdout)
         |  samurai repl                   Start interactive multi-line human REPL
@@ -201,6 +201,8 @@ object Main {
             val code = target match {
               case "ts" | "typescript" => TsEmitter.emit(module)
               case "js" | "javascript" => JsEmitter.emit(module)
+              case "hs" | "haskell"    => HaskellEmitter.emit(module)
+              case "ml" | "ocaml"      => OCamlEmitter.emit(module)
               case _                   => Scala3Emitter.emit(module)
             }
             outPathOpt match {

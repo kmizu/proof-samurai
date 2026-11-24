@@ -1,6 +1,6 @@
 # Getting Started
 
-**Proof Samurai** is a dependently-typed proof assistant using whitespace-insensitive **Scala 3 brace syntax**. You write functional programs, prove properties checked by a small **Trusted Kernel**, and extract proof-erased **Scala 3**, **TypeScript**, or **JavaScript** code with zero proof overhead at runtime.
+**Proof Samurai** is a dependently-typed proof assistant using whitespace-insensitive **Scala 3 brace syntax**. You write functional programs, prove properties checked by a small **Trusted Kernel**, and extract proof-erased **Scala 3**, **TypeScript**, **JavaScript**, **Haskell**, or **OCaml** code with zero proof overhead at runtime.
 
 Basic familiarity with Scala, TypeScript, Rust, or Haskell is enough to get started.
 

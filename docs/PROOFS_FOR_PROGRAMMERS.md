@@ -142,7 +142,7 @@ def sortVerified(items: List[Nat]):
   Subset[List[Nat], (output: List[Nat]) => IsSortedPermutation(items, output)]
 ```
 
-When extracted to Scala 3, TypeScript, or JavaScript, every `Prop` type and proof field vanishes completely:
+When extracted to Scala 3, TypeScript, JavaScript, Haskell, or OCaml, every `Prop` type and proof field vanishes completely:
 
 ```scala
 // Extracted Scala 3 output (proof field erased to 0 bytes)
