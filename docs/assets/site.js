@@ -614,8 +614,16 @@ object VerifiedSorting {
     }
   }
 
+  function normalizePage(page) {
+    if (!page) return "home";
+    const cleaned = page.replace(/^\/+/, "").replace(/^(?:docs?)\/+/, "");
+    if (!cleaned || cleaned === "home") return "home";
+    if (cleaned === "finder" || cleaned === "index") return "index";
+    return cleaned;
+  }
+
   async function navigate(pageId) {
-    currentPage = pageId === "finder" ? "index" : pageId || "home";
+    currentPage = normalizePage(pageId);
     updateHash();
     renderSidebar();
 
@@ -794,10 +802,10 @@ object VerifiedSorting {
     } catch (_) {}
 
     if (raw.startsWith("ja/")) {
-      return { lang: "ja", page: raw.slice(3) || "home" };
+      return { lang: "ja", page: normalizePage(raw.slice(3)) };
     }
     if (raw.startsWith("en/")) {
-      return { lang: "en", page: raw.slice(3) || "home" };
+      return { lang: "en", page: normalizePage(raw.slice(3)) };
     }
     if (raw === "ja" || raw === "en") {
       return { lang: raw, page: "home" };
@@ -808,7 +816,7 @@ object VerifiedSorting {
         : (navigator.language || "").toLowerCase().startsWith("ja")
         ? "ja"
         : "en";
-    return { lang: defaultLang, page: raw || "home" };
+    return { lang: defaultLang, page: normalizePage(raw) };
   }
 
   function init() {
