@@ -69,6 +69,8 @@ enum TokenKind {
   case LogicOr    // \/
   case AmpAmp     // &&
   case PipePipe   // ||
+  case Pipe       // |
+  case SeqAll     // <;>
   case ColonColon // ::
   case PlusPlus   // ++
   case Plus       // +

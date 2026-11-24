@@ -118,6 +118,7 @@ object Lexer {
         val kindOpt: Either[Diagnostic, TokenKind] =
           if (matches("===")) { advance(); advance(); advance(); Right(TokenKind.EqEqEq) }
           else if (matches("!==")) { advance(); advance(); advance(); Right(TokenKind.BangEqEq) }
+          else if (matches("<;>")) { advance(); advance(); advance(); Right(TokenKind.SeqAll) }
           else if (matches("=>")) { advance(); advance(); Right(TokenKind.FatArrow) }
           else if (matches("->")) { advance(); advance(); Right(TokenKind.ThinArrow) }
           else if (matches("==")) { advance(); advance(); Right(TokenKind.EqEq) }
@@ -130,6 +131,7 @@ object Lexer {
           else if (matches("||")) { advance(); advance(); Right(TokenKind.PipePipe) }
           else if (matches("::")) { advance(); advance(); Right(TokenKind.ColonColon) }
           else if (matches("++")) { advance(); advance(); Right(TokenKind.PlusPlus) }
+          else if (ch == '|') { advance(); Right(TokenKind.Pipe) }
           else if (ch == '(') { advance(); Right(TokenKind.LParen) }
           else if (ch == ')') { advance(); Right(TokenKind.RParen) }
           else if (ch == '{') { advance(); Right(TokenKind.LBrace) }

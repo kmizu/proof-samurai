@@ -110,7 +110,8 @@ theorem addZeroRightWithTactics(value: Nat): value + 0 === value = by {
 | `rewrite(eq)` | 等式による安全な型キャスト | `a === b` の証拠を使って、型の中の `a` を `b` に書き換える |
 | `discriminate(h)` | 到達不能分岐の消去（`Nothing`） | `0 === Succ(n)` や `true === false` のような矛盾から「この分岐は実行されない」ことを示す |
 | `injection(h, eq)` | コンストラクタ分解 | `Succ(a) === Succ(b)` から中身の等式 `a === b` を取り出す |
-| `simp` / `arith` / `auto` | ボイラープレートの自動生成 | 定義展開・半環恒等式・命題論理の関数本体を自動合成する（カーネルが事後検証） |
+| `simp` / `arith` / `omega` / `cc` / `tauto` / `auto` | ボイラープレートの自動生成 | 定義展開・半環・線形不等式・合同閉包・命題論理の関数本体を自動合成する（カーネルが事後検証） |
+| `t1 <;> t2` / `rewrite(...) in h` / `obtain(x, h) = e` | 証明スクリプトのコンビネータ | 全サブゴールへの一括適用、仮定 `h` の直接書き換え、タプル・存在型の 1 行分解を行う |
 
 ---
 

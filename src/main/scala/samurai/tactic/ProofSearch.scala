@@ -56,7 +56,7 @@ object ProofSearch {
 
     val goal = state.openGoals.head
 
-    // 1. Immediate closers: trivial (True, refl, assumption, contradiction, discriminate) and decide
+    // 1. Immediate closers: trivial, decide, omega (linear Nat arithmetic & inequalities), cc (congruence closure)
     Tactics.tacticTrivial(env, state, span) match {
       case Right((e1, s1)) =>
         search(e1, s1, depth, span) match {
@@ -72,6 +72,22 @@ object ProofSearch {
           case some @ Some(_) => break(some)
           case None           => ()
         }
+      case Left(_) => ()
+    }
+
+    OmegaTactic.solve(env, state, span) match {
+      case Right((e1, s1)) if s1.isSolved =>
+        break(Some((e1, s1)))
+      case Right((e1, s1)) =>
+        search(e1, s1, depth, span).foreach(res => break(Some(res)))
+      case Left(_) => ()
+    }
+
+    CongruenceClosure.solve(env, state, span) match {
+      case Right((e1, s1)) if s1.isSolved =>
+        break(Some((e1, s1)))
+      case Right((e1, s1)) =>
+        search(e1, s1, depth, span).foreach(res => break(Some(res)))
       case Left(_) => ()
     }
 
@@ -149,7 +165,7 @@ object ProofSearch {
           case _ => ()
         }
         // Try simp once on equality goals
-        Tactics.step(env, state, TacticStmt.Simp(Nil, includeLocalHyps = true, span)) match {
+        Tactics.step(env, state, TacticStmt.Simp(Nil, includeLocalHyps = true, target = None, span)) match {
           case Right((e1, s1)) if s1.isSolved =>
             break(Some((e1, s1)))
           case Right((e1, s1)) =>
@@ -221,8 +237,17 @@ object ProofSearch {
     if (Tactics.tacticTrivial(env, state, Span.synthetic).isRight) {
       suggestions += TacticSuggestion("trivial", 0.99, "Closes the goal immediately via refl, True, assumption, or contradiction")
     }
+    if (OmegaTactic.solve(env, state, Span.synthetic).isRight) {
+      suggestions += TacticSuggestion("omega", 0.97, "Closes linear Nat arithmetic / inequality goal automatically (0 axioms)")
+    }
+    if (CongruenceClosure.solve(env, state, Span.synthetic).isRight) {
+      suggestions += TacticSuggestion("cc", 0.96, "Closes equality / contradiction goal via congruence closure (0 axioms)")
+    }
+    if (Tactics.tacticTauto(env, state, Span.synthetic).isRight) {
+      suggestions += TacticSuggestion("tauto", 0.95, "Closes intuitionistic propositional tautology automatically (0 axioms)")
+    }
     if (Tactics.step(env, state, TacticStmt.Decide(Span.synthetic)).isRight) {
-      suggestions += TacticSuggestion("decide", 0.95, "Closes the goal via computational reflection")
+      suggestions += TacticSuggestion("decide", 0.94, "Closes the goal via computational reflection")
     }
 
     // 2. Structural rules on goal head

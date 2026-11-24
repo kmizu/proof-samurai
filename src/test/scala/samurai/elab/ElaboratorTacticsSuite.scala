@@ -399,4 +399,82 @@ class ElaboratorTacticsSuite extends FunSuite {
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
   }
+
+  test("practical theorem proving: omega, cc, tauto, combinators (<;>, all, try, repeat, first), in-hyp rewrite/simp, obtain, by_cases, rename") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import List.*
+        |import WellFounded.*
+        |
+        |theorem omegaSuite(a: Nat, b: Nat, c: Nat, h1: Le(a, b), h2: Lt(b, c)):
+        |  Le(a + 1, c) /\ (ble(a, c) === true) /\ (blt(c, a) === false) = by {
+        |  omega
+        |}
+        |
+        |theorem omegaNeqStrict(a: Nat, b: Nat, hLe: Le(a, b), hNeq: a !== b): Lt(a, b) = by {
+        |  omega
+        |}
+        |
+        |theorem ccSuite[A](f: A => A, g: A => A, x: A, y: A, z: A, h1: x === y, h2: f(y) === z):
+        |  g(f(x)) === g(z) = by {
+        |  cc
+        |}
+        |
+        |theorem ccInjectDisjoint(f: Nat => Nat, a: Nat, b: Nat, h: Nat.Succ(a) === Nat.Succ(b)):
+        |  f(a) === f(b) = by {
+        |  cc
+        |}
+        |
+        |theorem tautoSuite(p: Prop, q: Prop, r: Prop):
+        |  ((p => q) /\ (q => r)) => (p \/ q) => r = by {
+        |  tauto
+        |}
+        |
+        |theorem rewriteInStarAndRename(a: Nat, b: Nat, c: Nat, hEq: a === b, hLe: Le(a, c)):
+        |  Le(b, c) = by {
+        |  rename(hLe, bound)
+        |  rewrite(hEq) in *
+        |  exact(bound)
+        |}
+        |
+        |theorem simpInStarDemo(a: Nat, b: Nat, h: (a + 0) === (b + 0)): a === b = by {
+        |  simp in *
+        |  exact(h)
+        |}
+        |
+        |theorem repeatTryAllDemo(a: Nat, b: Nat): (a === b) \/ (a !== b) => (a + 0 === b) \/ (a !== b) = by {
+        |  intro(h)
+        |  cases(h)
+        |  all {
+        |    try { left; simp; assumption }
+        |    try { right; assumption }
+        |  }
+        |}
+        |
+        |theorem seqAllObtainDemo(p: Nat => Prop, q: Nat => Prop, h: exists (x: Nat) => p(x) /\ q(x)):
+        |  exists (x: Nat) => q(x) /\ p(x) = by {
+        |  obtain(w, hp, hq) = h
+        |  exists(w)
+        |  split <;> assumption
+        |}
+        |
+        |theorem byCasesFirstDemo(a: Nat, b: Nat): (ble(a, b) === true) \/ (ble(b, a) === true) = by {
+        |  by_cases(ble(a, b), cmp) <;> first { { left; omega } | { right; omega } }
+        |}
+        |
+        |theorem repeatSplitDemo: (1 + 1 === 2) /\ (2 + 2 === 4) /\ (3 + 3 === 6) = by {
+        |  repeat { split }
+        |  all { refl }
+        |}
+        |
+        |theorem decideRefuteLe: ~Le(7, 3) = by {
+        |  decide
+        |}
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+  }
 }

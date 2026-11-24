@@ -10,7 +10,10 @@ Every tactic below generates an ordinary kernel-checked function term (lambdas, 
 |---|---|---|---|
 | `a === b` (concrete values, e.g. `2 + 3 === 5`) | `refl` or `decide` | `Eq.Refl` (compile-time eval) | Normalizes both sides and closes if equal |
 | `a === b` (`Nat` with `+`, `*`, `0`, `Succ`) | `arith` (or `ring`) | Verified boilerplate generator | Proves commutative semiring `Nat` identities with 0 axioms |
-| `a === b` (with `@simp` lemmas or definitions) | `simp` or `simp(*)` | Verified boilerplate generator | Unfolds definitions, applies `@simp` lemmas, and (`*`) local equalities |
+| `Le` / `Lt` / `ble` / `blt` / `beq` / linear `Nat` arithmetic & inequalities | `omega` (or `lia`) | Verified linear solver | Proves `Nat` ordering chains, cancellation, antisymmetry, and contradictions with 0 axioms |
+| Chained equalities, congruence `f(a) === f(b)`, injectivity, disjointness | `cc` | Verified E-graph / congruence closure | Closes multi-hop equalities & constructor contradictions automatically (0 axioms) |
+| Intuitionistic propositional logic (`=>`, `/\`, `\/`, `~`, `Iff`) | `tauto` | Verified propositional solver | Complete intuitionistic tautology solver (0 axioms) |
+| `a === b` (with `@simp` lemmas or definitions) | `simp` / `simp(*)` / `simp in h` | Verified boilerplate generator | Unfolds definitions and rewrites goal, hypothesis `h`, or `*` |
 | `f(a) === f(b)` | `congr` | `congrArg(f, ...)` | Reduces to proving `a === b` |
 | `a === c` (via an intermediate expression `b`) | `trans(b)` or `calc { ... }` | Chained equality casts | Splits into `a === b` and `b === c` |
 | `a === b` (have hypothesis `h: b === a`) | `symmetry` | `eqSym(...)` | Flips the goal to `b === a` |
@@ -109,5 +112,37 @@ theorem mirrorTwice[Element](tree: Tree[Element]): mirror(mirror(tree)) === tree
       refl
     }
   }
+}
+```
+
+## Pattern 6: Practical Automation (`omega`, `cc`, `tauto`) and Combinators (`<;>`, `in hyp`, `obtain`, `by_cases`)
+
+Combine proof-producing decision procedures with goal combinators to keep real-world proofs short and readable:
+
+```scala
+import Prelude.*
+import Nat.*
+import WellFounded.*
+
+// Linear Nat inequalities, cancellation, antisymmetry, and constructive contradiction
+theorem strictFromNeq(a: Nat, b: Nat, hLe: Le(a, b), hNeq: a !== b): Lt(a, b) = by {
+  omega
+}
+
+// Multi-hop equality & function congruence
+theorem congruenceChain[A](f: A => A, g: A => A, a: A, b: A, c: A, h1: a === b, h2: f(b) === c):
+  g(f(a)) === g(c) = by {
+  cc
+}
+
+// Rewriting and simplifying inside hypotheses (`in h` or `in *`)
+theorem rewriteHyp(a: Nat, b: Nat, c: Nat, hEq: a === b, hLe: Le(a + 1, c)): Le(b, c) = by {
+  rewrite(hEq) in hLe
+  omega
+}
+
+// Flat destructuring (`obtain`) and multi-subgoal chaining (`<;>`, `by_cases`, `first`, `try`, `all`)
+theorem totalOrder(a: Nat, b: Nat): (ble(a, b) === true) \/ (ble(b, a) === true) = by {
+  by_cases(ble(a, b), cmp) <;> first { { left; omega } | { right; omega } }
 }
 ```

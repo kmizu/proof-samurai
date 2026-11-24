@@ -306,4 +306,369 @@ module Nat {
       }
     }
   }
+
+  // =========================================================================
+  // Cancellation, Boolean/Propositional Bridges, and Linear Ordering Laws
+  // (100% Axiom-Free — Foundation for `omega` and Practical Proofs)
+  // =========================================================================
+
+  theorem addCancelLeft(offset: Nat): forall (left: Nat, right: Nat) => (offset + left === offset + right) => (left === right) = by {
+    induction(offset) {
+      case Zero => {
+        intros(left, right, eqProof)
+        exact(eqProof)
+      }
+      case Succ(predOffset, ih) => {
+        intros(left, right, eqProof)
+        injection(eqProof, innerEq)
+        exact(ih(left, right, innerEq))
+      }
+    }
+  }
+
+  theorem addCancelRight(left: Nat, right: Nat, offset: Nat, eqProof: left + offset === right + offset): left === right = by {
+    have(swapped: offset + left === offset + right) {
+      rewrite(addComm(offset, left))
+      rewrite(addComm(offset, right))
+      exact(eqProof)
+    }
+    exact(addCancelLeft(offset, left, right, swapped))
+  }
+
+  theorem beqToEq(left: Nat): forall (right: Nat) => (beq(left, right) === true) => (left === right) = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(_)
+            refl
+          }
+          case Succ(predRight) => {
+            intro(h)
+            discriminate(h)
+          }
+        }
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(h)
+            discriminate(h)
+          }
+          case Succ(predRight) => {
+            intro(h)
+            congr
+            exact(ih(predRight, h))
+          }
+        }
+      }
+    }
+  }
+
+  theorem eqToBeq(left: Nat, right: Nat, eqProof: left === right): beq(left, right) === true = by {
+    rewrite(eqProof)
+    exact(beqRefl(right))
+  }
+
+  theorem bleStepRightNat(lower: Nat): forall (upper: Nat) => (ble(lower, upper) === true) => (ble(lower, Nat.Succ(upper)) === true) = by {
+    induction(lower) {
+      case Zero => {
+        intros(upper, _)
+        refl
+      }
+      case Succ(predLower, ih) => {
+        intro(upper)
+        cases(upper) {
+          case Zero => {
+            intro(h)
+            discriminate(h)
+          }
+          case Succ(predUpper) => {
+            intro(h)
+            exact(ih(predUpper, h))
+          }
+        }
+      }
+    }
+  }
+
+  theorem bleTransNat(first: Nat):
+    forall (second: Nat, third: Nat) =>
+      (ble(first, second) === true) => (ble(second, third) === true) => (ble(first, third) === true) = by {
+    induction(first) {
+      case Zero => {
+        intros(second, third, h1, h2)
+        refl
+      }
+      case Succ(predFirst, ih) => {
+        intros(second, third)
+        cases(second) {
+          case Zero => {
+            intros(h1, h2)
+            discriminate(h1)
+          }
+          case Succ(predSecond) => {
+            cases(third) {
+              case Zero => {
+                intros(h1, h2)
+                discriminate(h2)
+              }
+              case Succ(predThird) => {
+                intros(h1, h2)
+                exact(ih(predSecond, predThird, h1, h2))
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  theorem bleAntisymNat(left: Nat):
+    forall (right: Nat) => (ble(left, right) === true) => (ble(right, left) === true) => (left === right) = by {
+    induction(left) {
+      case Zero => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intros(_, _)
+            refl
+          }
+          case Succ(predRight) => {
+            intros(_, h2)
+            discriminate(h2)
+          }
+        }
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intros(h1, _)
+            discriminate(h1)
+          }
+          case Succ(predRight) => {
+            intros(h1, h2)
+            congr
+            exact(ih(predRight, h1, h2))
+          }
+        }
+      }
+    }
+  }
+
+  theorem leRefl(value: Nat): Le(value, value) = by {
+    exact(Le.Refl(value))
+  }
+
+  theorem leStepRight(lower: Nat, upper: Nat, leProof: Le(lower, upper)): Le(lower, Nat.Succ(upper)) = by {
+    exact(Le.Step(lower, upper, leProof))
+  }
+
+  def leSuccMono(lower: Nat, upper: Nat, leProof: Le(lower, upper)): Le(Nat.Succ(lower), Nat.Succ(upper)) = {
+    leProof match returning (a: Nat, b: Nat, _: Le(a, b)) => Le(Nat.Succ(a), Nat.Succ(b)) {
+      case Le.Refl(v) => Le.Refl(Nat.Succ(v))
+      case Le.Step(a, b, prev) => Le.Step(Nat.Succ(a), Nat.Succ(b), leSuccMono(a, b, prev))
+    }
+  }
+
+  def leToBle(lower: Nat, upper: Nat, leProof: Le(lower, upper)): ble(lower, upper) === true = {
+    leProof match returning (a: Nat, b: Nat, _: Le(a, b)) => ble(a, b) === true {
+      case Le.Refl(v) => bleRefl(v)
+      case Le.Step(a, b, prev) => bleStepRightNat(a, b, leToBle(a, b, prev))
+    }
+  }
+
+  theorem bleToLe(left: Nat): forall (right: Nat) => (ble(left, right) === true) => Le(left, right) = by {
+    induction(left) {
+      case Zero => {
+        intros(right, _)
+        exact(zeroLe(right))
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(h)
+            discriminate(h)
+          }
+          case Succ(predRight) => {
+            intro(h)
+            exact(leSuccMono(predLeft, predRight, ih(predRight, h)))
+          }
+        }
+      }
+    }
+  }
+
+  theorem leSuccInv(lower: Nat, upper: Nat, leProof: Le(Nat.Succ(lower), Nat.Succ(upper))): Le(lower, upper) = by {
+    exact(bleToLe(lower, upper, leToBle(Nat.Succ(lower), Nat.Succ(upper), leProof)))
+  }
+
+  theorem leSuccDown(lower: Nat, upper: Nat, leProof: Le(Nat.Succ(lower), upper)): Le(lower, upper) = by {
+    have(b1: ble(lower, Nat.Succ(lower)) === true) {
+      exact(bleStepRightNat(lower, lower, bleRefl(lower)))
+    }
+    have(b2: ble(Nat.Succ(lower), upper) === true) {
+      exact(leToBle(Nat.Succ(lower), upper, leProof))
+    }
+    exact(bleToLe(lower, upper, bleTransNat(lower, Nat.Succ(lower), upper, b1, b2)))
+  }
+
+  theorem leTrans(first: Nat, second: Nat, third: Nat, h1: Le(first, second), h2: Le(second, third)): Le(first, third) = by {
+    exact(bleToLe(first, third, bleTransNat(first, second, third, leToBle(first, second, h1), leToBle(second, third, h2))))
+  }
+
+  theorem leAntisym(left: Nat, right: Nat, h1: Le(left, right), h2: Le(right, left)): left === right = by {
+    exact(bleAntisymNat(left, right, leToBle(left, right, h1), leToBle(right, left, h2)))
+  }
+
+  theorem leZeroEq(value: Nat, leProof: Le(value, 0)): value === 0 = by {
+    exact(leAntisym(value, 0, leProof, zeroLe(value)))
+  }
+
+  theorem leSuccZeroFalse(value: Nat, leProof: Le(Nat.Succ(value), 0)): False = by {
+    have(b: ble(Nat.Succ(value), 0) === true) {
+      exact(leToBle(Nat.Succ(value), 0, leProof))
+    }
+    discriminate(b)
+  }
+
+  theorem leSuccSelfFalse(value: Nat): Le(Nat.Succ(value), value) => False = by {
+    induction(value) {
+      case Zero => {
+        intro(h)
+        exact(leSuccZeroFalse(0, h))
+      }
+      case Succ(pred, ih) => {
+        intro(h)
+        exact(ih(leSuccInv(Nat.Succ(pred), pred, h)))
+      }
+    }
+  }
+
+  theorem leAddLeft(offset: Nat): forall (lower: Nat, upper: Nat) => Le(lower, upper) => Le(offset + lower, offset + upper) = by {
+    induction(offset) {
+      case Zero => {
+        intros(lower, upper, h)
+        exact(h)
+      }
+      case Succ(predOffset, ih) => {
+        intros(lower, upper, h)
+        exact(leSuccMono(predOffset + lower, predOffset + upper, ih(lower, upper, h)))
+      }
+    }
+  }
+
+  theorem leAddRight(lower: Nat, upper: Nat, offset: Nat, h: Le(lower, upper)): Le(lower + offset, upper + offset) = by {
+    rewrite(addComm(lower, offset))
+    rewrite(addComm(upper, offset))
+    exact(leAddLeft(offset, lower, upper, h))
+  }
+
+  theorem leAddBoth(a: Nat, b: Nat, c: Nat, d: Nat, h1: Le(a, b), h2: Le(c, d)): Le(a + c, b + d) = by {
+    exact(leTrans(a + c, b + c, b + d, leAddRight(a, b, c, h1), leAddLeft(b, c, d, h2)))
+  }
+
+  theorem leAddCancelLeft(offset: Nat): forall (lower: Nat, upper: Nat) => Le(offset + lower, offset + upper) => Le(lower, upper) = by {
+    induction(offset) {
+      case Zero => {
+        intros(lower, upper, h)
+        exact(h)
+      }
+      case Succ(predOffset, ih) => {
+        intros(lower, upper, h)
+        exact(ih(lower, upper, leSuccInv(predOffset + lower, predOffset + upper, h)))
+      }
+    }
+  }
+
+  theorem leAddCancelRight(lower: Nat, upper: Nat, offset: Nat, h: Le(lower + offset, upper + offset)): Le(lower, upper) = by {
+    have(swapped: Le(offset + lower, offset + upper)) {
+      rewrite(addComm(offset, lower))
+      rewrite(addComm(offset, upper))
+      exact(h)
+    }
+    exact(leAddCancelLeft(offset, lower, upper, swapped))
+  }
+
+  theorem leAddIntroRight(base: Nat, extra: Nat): Le(base, base + extra) = by {
+    induction(base) {
+      case Zero => {
+        exact(zeroLe(extra))
+      }
+      case Succ(predBase, ih) => {
+        exact(leSuccMono(predBase, predBase + extra, ih))
+      }
+    }
+  }
+
+  theorem leAddIntroLeft(extra: Nat, base: Nat): Le(base, extra + base) = by {
+    rewrite(addComm(extra, base))
+    exact(leAddIntroRight(base, extra))
+  }
+
+  theorem leTransport(
+    a1: Nat,
+    a2: Nat,
+    b1: Nat,
+    b2: Nat,
+    eqA: a1 === a2,
+    eqB: b1 === b2,
+    leProof: Le(a1, b1)
+  ): Le(a2, b2) = by {
+    rewriteRev(eqA)
+    rewriteRev(eqB)
+    exact(leProof)
+  }
+
+  theorem bleFalseToLeSucc(left: Nat): forall (right: Nat) => (ble(left, right) === false) => Le(Nat.Succ(right), left) = by {
+    induction(left) {
+      case Zero => {
+        intros(right, h)
+        discriminate(h)
+      }
+      case Succ(predLeft, ih) => {
+        intro(right)
+        cases(right) {
+          case Zero => {
+            intro(_)
+            exact(leSuccMono(0, predLeft, zeroLe(predLeft)))
+          }
+          case Succ(predRight) => {
+            intro(h)
+            exact(leSuccMono(Nat.Succ(predRight), predLeft, ih(predRight, h)))
+          }
+        }
+      }
+    }
+  }
+
+  theorem leSuccToBleFalse(lower: Nat, upper: Nat, h: Le(Nat.Succ(upper), lower)): ble(lower, upper) === false = by {
+    cases(ble(lower, upper), cmpEq) {
+      case True => {
+        have(le1: Le(lower, upper)) {
+          exact(bleToLe(lower, upper, cmpEq))
+        }
+        have(cycle: Le(Nat.Succ(upper), upper)) {
+          exact(leTrans(Nat.Succ(upper), lower, upper, h, le1))
+        }
+        exfalso
+        exact(leSuccSelfFalse(upper, cycle))
+      }
+      case False => {
+        refl
+      }
+    }
+  }
+
+  theorem bltFalseToLe(left: Nat, right: Nat, h: blt(left, right) === false): Le(right, left) = by {
+    exact(leSuccInv(right, left, bleFalseToLeSucc(Nat.Succ(left), right, h)))
+  }
+
+  theorem leToBltFalse(lower: Nat, upper: Nat, h: Le(upper, lower)): blt(lower, upper) === false = by {
+    exact(leSuccToBleFalse(Nat.Succ(lower), upper, leSuccMono(upper, lower, h)))
+  }
 }

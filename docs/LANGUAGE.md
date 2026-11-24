@@ -139,9 +139,10 @@ theorem calcExample[Element](first: List[Element], second: List[Element], third:
 ```
 
 ## Built-In Tactics (`by { ... }`)
-- **Structure**: `intro(x)`, `intros(x, y)`, `revert(x)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`
-- **Equality**: `refl`, `symmetry`, `trans(mid)`, `rewrite(h1, h2, ...)`, `rewriteRev(h1, ...)`, `subst(eq)`, `congr`
-- **Inductives**: `induction(x) { case ... => { ... } }`, `cases(expr) { case ... => { ... } }`, `cases(expr, eqHyp) { case ... => { ... } }`, `discriminate`, `injection(h, name)`
-- **Logic**: `split`, `left`, `right`, `exists(witness)`, `contradiction`, `exfalso`
-- **Automation**: `unfold(defName)`, `simp`, `simp(*)`, `simp(lem1, lem2)`, `arith` / `ring` (sound proof-producing Nat commutative semiring solver), `trivial`, `decide`, `auto` (or `samurai`)
+- **Structure**: `intro(x)`, `intros(x, y)`, `revert(x)`, `rename(old, new)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`, `obtain(x, h) = expr`
+- **Equality**: `refl`, `symmetry`, `trans(mid)`, `rewrite(h1, ...) [in h | in *]`, `rewriteRev(h1, ...) [in h | in *]`, `subst(eq)`, `congr`
+- **Inductives**: `induction(x) { case ... => { ... } }`, `cases(expr[, eqHyp]) { case ... => { ... } }`, `by_cases(cond[, h])`, `discriminate`, `injection(h, name)`
+- **Logic**: `split`, `left`, `right`, `exists(witness)`, `contradiction`, `exfalso`, `tauto` (complete intuitionistic propositional solver, 0 axioms)
+- **Automation**: `unfold(defName)`, `simp[(lem, *)] [in h | in *]`, `arith` / `ring` (Nat commutative semiring solver), `omega` / `lia` (linear Nat arithmetic & inequality solver), `cc` (congruence closure + injectivity/disjointness), `trivial`, `decide`, `auto` (or `samurai`)
+- **Combinators**: `t1 <;> t2`, `all { ... }`, `try { ... }`, `repeat { ... }`, `first { t1 | t2 | ... }`
 - **Development**: `?holeName`, `sorry` (explicitly tracked in kernel trust reports!)

@@ -86,10 +86,10 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - `src/main/scala/samurai/kernel/` — Trusted Computing Base (`Term`, `Env`, `NbE`, `Positivity`, `Termination`, `TypeChecker`, `Pretty`)
 - `src/main/scala/samurai/syntax/` — Whitespace-insensitive Scala 3 brace lexer, AST, and parser
 - `src/main/scala/samurai/elab/` — Bidirectional elaborator, metavariable unification, pattern matrix compiler, `calc` & `termination_by` elaboration
-- `src/main/scala/samurai/tactic/` — LCF-style tactics, proof-producing `ArithTactic` (`arith` / `ring`), `ProofSearch` (`auto`, `suggest`)
+- `src/main/scala/samurai/tactic/` — LCF-style tactics & combinators (`<;>`, `in hyp`, `obtain`, `by_cases`, `tauto`), proof-producing `ArithTactic` (`arith`/`ring`), `OmegaTactic` (`omega`/`lia`), `CongruenceClosure` (`cc`), `ProofSearch` (`auto`, `suggest`)
 - `src/main/scala/samurai/extract/` — `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`)
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — Embedded HTTP server and Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — Branching NDJSON proof server (`ProofSessionServer`) and multi-line REPL
 - `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`)
-- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`)
+- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`)
 - `docs/` — English and Japanese (`docs/ja/`) documentation and GitHub Pages site

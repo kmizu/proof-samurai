@@ -17,12 +17,26 @@ object ArithTactic {
   private val AddConst: Term = Term.Const("add")
   private val MulConst: Term = Term.Const("mul")
 
-  private final case class Poly(constVal: Int, monos: List[List[Term]])
+  private[tactic] final case class Poly(constVal: Int, monos: List[List[Term]])
 
   private val RequiredLemmas: List[String] = List(
     "addZeroRight", "addComm", "addAssoc",
     "mulZeroRight", "mulOneLeft", "mulOneRight", "mulComm", "mulAssoc", "mulDistribRight"
   )
+
+  private[tactic] def hasRequiredLemmas(kernelEnv: KernelEnv): Boolean =
+    RequiredLemmas.forall(kernelEnv.contains)
+
+  /** Prove `lhs === rhs` on `Nat` by commutative semiring normalization, returning a 0-axiom proof term. */
+  private[tactic] def proveNatEq(kernelEnv: KernelEnv, localCtx: LocalCtx, lhs: Term, rhs: Term): Option[Term] = {
+    if (!hasRequiredLemmas(kernelEnv)) return None
+    val (polyL, proofL) = normalizeNat(kernelEnv, localCtx, lhs)
+    val (polyR, proofR) = normalizeNat(kernelEnv, localCtx, rhs)
+    if (polyL == polyR) {
+      val canon = polyTerm(polyL)
+      Some(mkTrans(lhs, canon, rhs, proofL, mkSym(rhs, canon, proofR)))
+    } else None
+  }
 
   def solve(env: ElabEnv, state: ProofState, span: Span): Either[Diagnostic, (ElabEnv, ProofState)] = {
     val goal = state.openGoals.head
@@ -79,17 +93,17 @@ object ArithTactic {
   // Core Proof Combinators (100% Pure Kernel Terms)
   // ===========================================================================
 
-  private def natLit(n: Int): Term =
+  private[tactic] def natLit(n: Int): Term =
     if (n <= 0) Term.Ctor("Nat", "Zero")
     else Term.App(Term.Ctor("Nat", "Succ"), natLit(n - 1))
 
-  private def mkAdd(a: Term, b: Term): Term = Term.apps(AddConst, List(a, b))
-  private def mkMul(a: Term, b: Term): Term = Term.apps(MulConst, List(a, b))
+  private[tactic] def mkAdd(a: Term, b: Term): Term = Term.apps(AddConst, List(a, b))
+  private[tactic] def mkMul(a: Term, b: Term): Term = Term.apps(MulConst, List(a, b))
 
-  private def mkRefl(t: Term): Term =
+  private[tactic] def mkRefl(t: Term): Term =
     Term.apps(Term.Ctor("Eq", "Refl"), List(NatType, t))
 
-  private def mkSym(a: Term, b: Term, proofAB: Term): Term = {
+  private[tactic] def mkSym(a: Term, b: Term, proofAB: Term): Term = {
     val a1 = Term.shift(a, 1)
     val a2 = Term.shift(a, 2)
     val motive = Term.Lam(
@@ -104,7 +118,7 @@ object ArithTactic {
     Term.Match("Eq", List(NatType, a), motive, proofAB, List(MatchBranch("Refl", Nil, mkRefl(a))))
   }
 
-  private def mkTrans(a: Term, b: Term, c: Term, proofAB: Term, proofBC: Term): Term = {
+  private[tactic] def mkTrans(a: Term, b: Term, c: Term, proofAB: Term, proofBC: Term): Term = {
     val b1 = Term.shift(b, 1)
     val a2 = Term.shift(a, 2)
     val motive = Term.Lam(
@@ -202,19 +216,19 @@ object ArithTactic {
       if (c != 0) c else compareMonos(t1, t2)
   }
 
-  private def monoTerm(atoms: List[Term]): Term = atoms match {
+  private[tactic] def monoTerm(atoms: List[Term]): Term = atoms match {
     case Nil          => natLit(1)
     case single :: Nil => single
     case head :: tail => mkMul(head, monoTerm(tail))
   }
 
-  private def sumMonosTerm(monos: List[List[Term]]): Term = monos match {
+  private[tactic] def sumMonosTerm(monos: List[List[Term]]): Term = monos match {
     case Nil           => natLit(0)
     case single :: Nil => monoTerm(single)
     case head :: tail  => mkAdd(monoTerm(head), sumMonosTerm(tail))
   }
 
-  private def polyTerm(p: Poly): Term = (p.constVal, p.monos) match {
+  private[tactic] def polyTerm(p: Poly): Term = (p.constVal, p.monos) match {
     case (k, Nil) => natLit(k)
     case (0, ms)  => sumMonosTerm(ms)
     case (k, ms)  => mkAdd(natLit(k), sumMonosTerm(ms))
@@ -493,7 +507,7 @@ object ArithTactic {
     case _                        => false
   }
 
-  private def normalizeNat(kernelEnv: KernelEnv, localCtx: LocalCtx, term: Term): (Poly, Term) = {
+  private[tactic] def normalizeNat(kernelEnv: KernelEnv, localCtx: LocalCtx, term: Term): (Poly, Term) = {
     val norm = NbE.normalize(kernelEnv, localCtx, term)
     val (p, pfNorm) = normalizeNormNat(norm)
     // Because `term` and `norm` are definitionally equal, `pfNorm` already has type `term === polyTerm(p)`!

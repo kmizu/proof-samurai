@@ -42,7 +42,12 @@ object Tactics {
     stmt: TacticStmt
   ): Either[Diagnostic, (ElabEnv, ProofState)] = {
     if (state.isSolved) {
-      return Left(Diagnostic(Diagnostic.Severity.Error, "T001", s"No open goals remaining for tactic", stmt.span))
+      stmt match {
+        case TacticStmt.Try(_, _) | TacticStmt.Repeat(_, _, _) | TacticStmt.AllGoals(_, _) =>
+          return Right((env, state))
+        case _ =>
+          return Left(Diagnostic(Diagnostic.Severity.Error, "T001", s"No open goals remaining for tactic", stmt.span))
+      }
     }
 
     stmt match {
@@ -52,31 +57,43 @@ object Tactics {
       case TacticStmt.Refl(span)                        => tacticRefl(env, state, span)
       case TacticStmt.Symmetry(span)                    => tacticSymmetry(env, state, span)
       case TacticStmt.Trans(midExpr, span)              => tacticTrans(env, state, midExpr, span)
-      case TacticStmt.Rewrite(lemmas, rev, span)             => tacticRewriteMany(env, state, lemmas, rev, span)
-      case TacticStmt.Congr(span)                       => tacticCongr(env, state, span)
-      case TacticStmt.Induction(target, cases, span)         => tacticInduction(env, state, target, cases, span)
-      case TacticStmt.Cases(target, eqName, cases, span)     => tacticCases(env, state, target, eqName, cases, span)
-      case TacticStmt.Revert(names, span)                    => tacticRevert(env, state, names, span)
-      case TacticStmt.Exfalso(span)                          => tacticExfalso(env, state, span)
-      case TacticStmt.Subst(hyp, span)                       => tacticSubst(env, state, hyp, span)
-      case TacticStmt.Specialize(hypName, args, span)        => tacticSpecialize(env, state, hypName, args, span)
-      case TacticStmt.Split(span)                            => tacticSplit(env, state, span)
-      case TacticStmt.LeftBranch(span)                  => tacticLeftOrRight(env, state, isLeft = true, span)
-      case TacticStmt.RightBranch(span)                 => tacticLeftOrRight(env, state, isLeft = false, span)
-      case TacticStmt.ExistsWitness(witness, span)      => tacticExists(env, state, witness, span)
-      case TacticStmt.Contradiction(span)               => tacticContradiction(env, state, span)
-      case TacticStmt.Discriminate(hypOpt, span)        => tacticDiscriminate(env, state, hypOpt, span)
-      case TacticStmt.Injection(hypExpr, names, span)   => tacticInjection(env, state, hypExpr, names, span)
-      case TacticStmt.Have(name, propTy, proof, span)   => tacticHave(env, state, name, propTy, proof, span)
-      case TacticStmt.Unfold(defName, span)                  => tacticUnfold(env, state, defName, span)
-      case TacticStmt.Simp(extras, useLocals, span)          => tacticSimp(env, state, extras, useLocals, span)
-      case TacticStmt.Arith(span)                            => ArithTactic.solve(env, state, span)
-      case TacticStmt.Trivial(span)                          => tacticTrivial(env, state, span)
-      case TacticStmt.Auto(depthOpt, span)              => ProofSearch.tacticAuto(env, state, depthOpt.getOrElse(5), span)
-      case TacticStmt.Decide(span)                      => tacticDecide(env, state, span)
-      case TacticStmt.Assumption(span)                  => tacticAssumption(env, state, span)
-      case TacticStmt.Sorry(span)                       => tacticSorry(env, state, span)
-      case TacticStmt.Hole(nameOpt, span)               => tacticHole(env, state, nameOpt, span)
+      case TacticStmt.Rewrite(lemmas, rev, target, span)         => tacticRewriteTarget(env, state, lemmas, rev, target, span)
+      case TacticStmt.Congr(span)                                => tacticCongr(env, state, span)
+      case TacticStmt.Induction(target, cases, span)             => tacticInduction(env, state, target, cases, span)
+      case TacticStmt.Cases(target, eqName, cases, span)         => tacticCases(env, state, target, eqName, cases, span)
+      case TacticStmt.ByCases(cond, eqName, cases, span)         => tacticCases(env, state, cond, eqName.orElse(Some("hCase")), cases, span)
+      case TacticStmt.Obtain(binders, source, span)              => tacticObtain(env, state, binders, source, span)
+      case TacticStmt.Revert(names, span)                        => tacticRevert(env, state, names, span)
+      case TacticStmt.Rename(oldName, newName, span)             => tacticRename(env, state, oldName, newName, span)
+      case TacticStmt.Exfalso(span)                              => tacticExfalso(env, state, span)
+      case TacticStmt.Subst(hyp, span)                           => tacticSubst(env, state, hyp, span)
+      case TacticStmt.Specialize(hypName, args, span)            => tacticSpecialize(env, state, hypName, args, span)
+      case TacticStmt.Split(span)                                => tacticSplit(env, state, span)
+      case TacticStmt.LeftBranch(span)                           => tacticLeftOrRight(env, state, isLeft = true, span)
+      case TacticStmt.RightBranch(span)                          => tacticLeftOrRight(env, state, isLeft = false, span)
+      case TacticStmt.ExistsWitness(witness, span)               => tacticExists(env, state, witness, span)
+      case TacticStmt.Contradiction(span)                        => tacticContradiction(env, state, span)
+      case TacticStmt.Discriminate(hypOpt, span)                 => tacticDiscriminate(env, state, hypOpt, span)
+      case TacticStmt.Injection(hypExpr, names, span)            => tacticInjection(env, state, hypExpr, names, span)
+      case TacticStmt.Have(name, propTy, proof, span)            => tacticHave(env, state, name, propTy, proof, span)
+      case TacticStmt.Unfold(defName, span)                      => tacticUnfold(env, state, defName, span)
+      case TacticStmt.Simp(extras, useLocals, target, span)      => tacticSimpTarget(env, state, extras, useLocals, target, span)
+      case TacticStmt.Arith(span)                                => ArithTactic.solve(env, state, span)
+      case TacticStmt.Omega(span)                                => OmegaTactic.solve(env, state, span)
+      case TacticStmt.CongruenceClosure(span)                    => CongruenceClosure.solve(env, state, span)
+      case TacticStmt.Tauto(span)                                => tacticTauto(env, state, span)
+      case TacticStmt.Trivial(span)                              => tacticTrivial(env, state, span)
+      case TacticStmt.Auto(depthOpt, span)                       => ProofSearch.tacticAuto(env, state, depthOpt.getOrElse(5), span)
+      case TacticStmt.Decide(span)                               => tacticDecide(env, state, span)
+      case TacticStmt.Assumption(span)                           => tacticAssumption(env, state, span)
+      case TacticStmt.Try(body, span)                            => tacticTry(env, state, body, span)
+      case TacticStmt.Repeat(body, maxSteps, span)               => tacticRepeat(env, state, body, maxSteps.getOrElse(32), span)
+      case TacticStmt.AllGoals(body, span)                       => tacticAllGoals(env, state, body, span)
+      case TacticStmt.First(branches, span)                      => tacticFirst(env, state, branches, span)
+      case TacticStmt.SeqAll(first, after, span)                 => tacticSeqAll(env, state, first, after, span)
+      case TacticStmt.Block(stmts, _)                            => runScript(env, state, stmts)
+      case TacticStmt.Sorry(span)                                => tacticSorry(env, state, span)
+      case TacticStmt.Hole(nameOpt, span)                        => tacticHole(env, state, nameOpt, span)
     }
   }
 
@@ -473,6 +490,224 @@ object Tactics {
       case None =>
         Left(Diagnostic(Diagnostic.Severity.Error, "T013", "Goal is not an equality ('===') for 'trans'", span))
     }
+  }
+
+  private def tacticRewriteTarget(
+    env: ElabEnv,
+    state: ProofState,
+    lemmas: List[SurfaceExpr],
+    reverse: Boolean,
+    target: Option[String],
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = target match {
+    case None =>
+      tacticRewriteMany(env, state, lemmas, reverse, span)
+    case Some("*") =>
+      boundary {
+        var curEnv = env
+        var curState = state
+        for (lemmaExpr <- lemmas) {
+          var anyChange = false
+          val skipNameOpt = lemmaExpr match {
+            case SurfaceExpr.VarExpr(n, _) => Some(n)
+            case _                         => None
+          }
+          val hypNames = curState.openGoals.head.localCtx.entries.map(_.name).distinct.filterNot(n => skipNameOpt.contains(n))
+          for (hName <- hypNames) {
+            tacticRewriteInHyp(curEnv, curState, lemmaExpr, reverse, hName, span) match {
+              case Right((nextEnv, nextState)) =>
+                curEnv = nextEnv; curState = nextState; anyChange = true
+              case Left(_) => ()
+            }
+          }
+          tacticRewrite(curEnv, curState, lemmaExpr, reverse, span) match {
+            case Right((nextEnv, nextState)) =>
+              curEnv = nextEnv; curState = nextState; anyChange = true
+            case Left(_) => ()
+          }
+          if (!anyChange) {
+            break(Left(Diagnostic(Diagnostic.Severity.Error, "T015", "'rewrite(...) in *' did not match any hypothesis or the goal", span)))
+          }
+        }
+        Right((curEnv, curState))
+      }
+    case Some(hypName) =>
+      boundary {
+        var curEnv = env
+        var curState = state
+        for (lemmaExpr <- lemmas) {
+          tacticRewriteInHyp(curEnv, curState, lemmaExpr, reverse, hypName, span) match {
+            case Left(err) => break(Left(err))
+            case Right((nextEnv, nextState)) =>
+              curEnv = nextEnv; curState = nextState
+          }
+        }
+        Right((curEnv, curState))
+      }
+  }
+
+  private def tacticRewriteInHyp(
+    env: ElabEnv,
+    state: ProofState,
+    lemmaExpr: SurfaceExpr,
+    reverse: Boolean,
+    hypName: String,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val goal = state.openGoals.head
+    val metaCtx = new MetaContext()
+    Elaborator.inferExpr(env, metaCtx, goal.localCtx, lemmaExpr).flatMap { case (rawProof, rawType, nextEnv) =>
+      rewriteInHypWithCoreLemma(nextEnv, state, goal, metaCtx, rawProof, rawType, reverse, hypName, span)
+    }
+  }
+
+  private def lookupHyp(localCtx: LocalCtx, hypName: String): Option[(Int, Term)] = {
+    val idx = localCtx.entries.indexWhere(_.name == hypName)
+    if (idx < 0) None
+    else localCtx.lookupType(idx).map(ty => (idx, ty))
+  }
+
+  def rewriteInHypWithCoreLemma(
+    env: ElabEnv,
+    state: ProofState,
+    goal: ProofGoal,
+    metaCtx: MetaContext,
+    rawProof: Term,
+    rawType: Term,
+    reverse: Boolean,
+    hypName: String,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val (hypIdx, rawHypTy) = lookupHyp(goal.localCtx, hypName) match {
+      case Some(pair) => pair
+      case None =>
+        return Left(Diagnostic(Diagnostic.Severity.Error, "T015", s"Unknown hypothesis '$hypName' in 'rewrite ... in $hypName'", span))
+    }
+
+    val fuel = new NbE.Fuel()
+    val evalEnv = NbE.buildEvalEnv(env.kernelEnv, goal.localCtx, fuel)
+    var curProof = rawProof
+    var curType = metaCtx.zonk(rawType, goal.localCtx.depth)
+    var peeled = 0
+    while (peeled < 16) {
+      NbE.evaluate(env.kernelEnv, evalEnv, curType, fuel) match {
+        case Value.VPi(bName, domVal, codClosure) =>
+          val domTerm = NbE.quote(env.kernelEnv, goal.localCtx.depth, domVal, fuel)
+          val meta = metaCtx.freshMeta(goal.localCtx.depth, domTerm, Some(bName))
+          curProof = Term.App(curProof, meta)
+          val metaVal = NbE.evaluate(env.kernelEnv, evalEnv, meta, fuel)
+          curType = NbE.quote(env.kernelEnv, goal.localCtx.depth, NbE.applyClosure(env.kernelEnv, codClosure, metaVal, fuel), fuel)
+          peeled += 1
+        case _ =>
+          peeled = 16
+      }
+    }
+
+    val (eqTypeRaw, lhsRaw, rhsRaw) = extractEqGoal(env.kernelEnv, goal.localCtx, curType) match {
+      case Some(triple) => triple
+      case None =>
+        return Left(
+          Diagnostic(
+            Diagnostic.Severity.Error,
+            "T014",
+            s"Rewrite lemma must have an equality type ('==='), found '${Pretty.show(curType, goal.localCtx.names)}'",
+            span
+          )
+        )
+    }
+
+    val searchPattern = if (reverse) rhsRaw else lhsRaw
+    val normalizedHypTy = NbE.normalize(env.kernelEnv, goal.localCtx, rawHypTy)
+
+    val normPattern = NbE.normalize(env.kernelEnv, goal.localCtx, metaCtx.zonk(searchPattern, goal.localCtx.depth))
+    normPattern match {
+      case Term.Const(m) if MetaContext.isMeta(m) =>
+        return Left(Diagnostic(Diagnostic.Severity.Error, "T015", "Rewrite pattern reduces to a bare metavariable", span))
+      case _ => ()
+    }
+
+    if (metaCtx.unsolvedEntries.nonEmpty) {
+      if (!unifyWithAnySubterm(env.kernelEnv, goal.localCtx, metaCtx, searchPattern, eqTypeRaw, normalizedHypTy)) {
+        return Left(
+          Diagnostic(
+            Diagnostic.Severity.Error,
+            "T015",
+            s"Rewrite pattern '${Pretty.show(metaCtx.zonk(searchPattern, goal.localCtx.depth), goal.localCtx.names)}' " +
+              s"did not match any subterm of hypothesis '$hypName : ${Pretty.show(normalizedHypTy, goal.localCtx.names)}'",
+            span
+          )
+        )
+      }
+    }
+
+    val eqType = metaCtx.zonk(eqTypeRaw, goal.localCtx.depth)
+    val lhs = metaCtx.zonk(lhsRaw, goal.localCtx.depth)
+    val rhs = metaCtx.zonk(rhsRaw, goal.localCtx.depth)
+    val lemmaProof = metaCtx.zonk(curProof, goal.localCtx.depth)
+
+    if (metaCtx.unsolvedEntries.nonEmpty) {
+      return Left(Diagnostic(Diagnostic.Severity.Error, "T015", "Could not instantiate all arguments of rewrite lemma", span))
+    }
+
+    // Forward transport on hypothesis `h : P(fromTerm)` using `fwdProof : fromTerm === toTerm` -> `P(toTerm)`!
+    val (fromTerm, toTerm, fwdProof) =
+      if (!reverse) (lhs, rhs, lemmaProof)
+      else (rhs, lhs, buildSymProof(eqType, lhs, rhs, lemmaProof))
+
+    val (motiveBody, replacedCount) = abstractSubterm(
+      env.kernelEnv,
+      goal.localCtx,
+      normalizedHypTy,
+      fromTerm,
+      replacementVarIdx = 1,
+      extraDepth = 2
+    )
+
+    if (replacedCount == 0) {
+      return Left(
+        Diagnostic(
+          Diagnostic.Severity.Error,
+          "T015",
+          s"Rewrite target '${Pretty.show(fromTerm, goal.localCtx.names)}' does not occur in hypothesis '$hypName'",
+          span
+        )
+      )
+    }
+
+    val eqType1 = Term.shift(eqType, 1)
+    val fromTerm1 = Term.shift(fromTerm, 1)
+    val motive = Term.Lam(
+      "_z",
+      eqType,
+      Term.Lam(
+        "_p",
+        Term.apps(Term.Ind("Eq"), List(eqType1, fromTerm1, Term.Var(0))),
+        motiveBody
+      )
+    )
+
+    val newHypTy = NbE.normalize(
+      env.kernelEnv,
+      goal.localCtx,
+      Term.apps(motive, List(toTerm, fwdProof))
+    )
+    val newHypProof = Term.Match(
+      "Eq",
+      List(eqType, fromTerm),
+      motive,
+      fwdProof,
+      List(MatchBranch("Refl", Nil, Term.Var(hypIdx)))
+    )
+
+    val subId = state.nextGoalId
+    val subCtx = goal.localCtx.push(hypName, newHypTy, Some(newHypProof))
+    val subGoal = ProofGoal(subId, goal.label, subCtx, Term.shift(goal.targetType, 1))
+    val nextState = state.replaceHead(
+      List(subGoal),
+      sols => Term.Let(hypName, newHypTy, newHypProof, sols(subId)),
+      subId + 1
+    )
+    Right((env, nextState))
   }
 
   private def tacticRewriteMany(
@@ -1709,6 +1944,115 @@ object Tactics {
     Right((env, state.replaceHead(List(subGoal), sols => sols(subId), subId + 1)))
   }
 
+  private def tacticSimpTarget(
+    env: ElabEnv,
+    state: ProofState,
+    extraLemmas: List[SurfaceExpr],
+    includeLocalHyps: Boolean,
+    target: Option[String],
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = target match {
+    case None =>
+      tacticSimp(env, state, extraLemmas, includeLocalHyps, span)
+    case Some("*") =>
+      var curEnv = env
+      var curState = state
+      val hypNames = curState.openGoals.head.localCtx.entries.map(_.name).distinct
+      for (hName <- hypNames if !curState.isSolved) {
+        tacticSimpInHyp(curEnv, curState, extraLemmas, includeLocalHyps, hName, span) match {
+          case Right((nextEnv, nextState)) =>
+            curEnv = nextEnv; curState = nextState
+          case Left(_) => ()
+        }
+      }
+      if (curState.isSolved) Right((curEnv, curState))
+      else tacticSimp(curEnv, curState, extraLemmas, includeLocalHyps, span)
+    case Some(hypName) =>
+      tacticSimpInHyp(env, state, extraLemmas, includeLocalHyps, hypName, span)
+  }
+
+  private def tacticSimpInHyp(
+    env: ElabEnv,
+    state: ProofState,
+    extraLemmas: List[SurfaceExpr],
+    includeLocalHyps: Boolean,
+    hypName: String,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val goal0 = state.openGoals.head
+    val (hypIdx0, rawTy0) = lookupHyp(goal0.localCtx, hypName) match {
+      case Some(pair) => pair
+      case None =>
+        return Left(Diagnostic(Diagnostic.Severity.Error, "T040", s"Unknown hypothesis '$hypName' in 'simp in $hypName'", span))
+    }
+
+    var curEnv = env
+    var curState = state
+
+    // 1. Normalize hypothesis type via NbE if it simplifies
+    val normTy0 = NbE.normalize(env.kernelEnv, goal0.localCtx, rawTy0)
+    if (normTy0 != rawTy0) {
+      val subId = curState.nextGoalId
+      val subCtx = goal0.localCtx.push(hypName, normTy0, Some(Term.Var(hypIdx0)))
+      val subGoal = ProofGoal(subId, goal0.label, subCtx, Term.shift(goal0.targetType, 1))
+      curState = curState.replaceHead(
+        List(subGoal),
+        sols => Term.Let(hypName, normTy0, Term.Var(hypIdx0), sols(subId)),
+        subId + 1
+      )
+    }
+
+    // 2. Repeatedly rewrite hypothesis using extras, optional local Eq hypotheses, and @simp lemmas
+    var progress = true
+    var rounds = 0
+    while (progress && rounds < 12 && !curState.isSolved) {
+      progress = false
+      rounds += 1
+
+      for (extra <- extraLemmas if !curState.isSolved && !progress) {
+        tacticRewriteInHyp(curEnv, curState, extra, reverse = false, hypName, span) match {
+          case Right((nextEnv, nextState)) =>
+            curEnv = nextEnv; curState = nextState; progress = true
+          case Left(_) => ()
+        }
+      }
+
+      if (includeLocalHyps && !curState.isSolved && !progress) {
+        val g = curState.openGoals.head
+        val curHypIdx = lookupHyp(g.localCtx, hypName).map(_._1).getOrElse(-1)
+        for (idx <- g.localCtx.entries.indices if idx != curHypIdx && !curState.isSolved && !progress) {
+          val eqHypTy = g.localCtx.lookupType(idx).get
+          extractEqGoal(curEnv.kernelEnv, g.localCtx, eqHypTy).foreach { case (_, lhs, rhs) =>
+            val lhsStr = Pretty.show(lhs, g.localCtx.names)
+            val rhsStr = Pretty.show(rhs, g.localCtx.names)
+            if (lhs != rhs && !rhsStr.contains(lhsStr)) {
+              val metaCtx = new MetaContext()
+              rewriteInHypWithCoreLemma(curEnv, curState, g, metaCtx, Term.Var(idx), eqHypTy, reverse = false, hypName, span) match {
+                case Right((nextEnv, nextState)) =>
+                  curEnv = nextEnv; curState = nextState; progress = true
+                case Left(_) => ()
+              }
+            }
+          }
+        }
+      }
+
+      for (simpName <- curEnv.simpLemmas if !curState.isSolved && !progress) {
+        curEnv.kernelEnv.lookupConstType(simpName).foreach { lemmaTy =>
+          val metaCtx = new MetaContext()
+          val g = curState.openGoals.head
+          rewriteInHypWithCoreLemma(curEnv, curState, g, metaCtx, Term.Const(simpName), lemmaTy, reverse = false, hypName, span) match {
+            case Right((nextEnv, nextState)) =>
+              curEnv = nextEnv; curState = nextState; progress = true
+            case Left(_) => ()
+          }
+        }
+      }
+    }
+
+    Right((curEnv, curState))
+  }
+
   private def tacticSimp(
     env: ElabEnv,
     state: ProofState,
@@ -1863,19 +2207,425 @@ object Tactics {
           case _ => None
         }
 
+      case Term.Ind("Iff") if args.length == 2 =>
+        for {
+          p1 <- decideTerm(kernelEnv, localCtx, Term.Pi("_", args(0), Term.shift(args(1), 1)))
+          p2 <- decideTerm(kernelEnv, localCtx, Term.Pi("_", args(1), Term.shift(args(0), 1)))
+        } yield Term.apps(Term.Ctor("Iff", "Intro"), List(args(0), args(1), p1, p2))
+
       case _ =>
-        // Check `Not(Eq(I, C1(...), C2(...)))` i.e. `Pi(_, Eq(...), False)`
+        // Check `Not(P)` (`P => False`): try discriminate first, then OmegaTactic for concrete false inequalities like `~Le(5, 2)`!
         norm match {
           case Term.Pi(n, dom, Term.Ind("False")) =>
             val subState = ProofState.initial(localCtx.push(n, dom), Term.Ind("False"))
             tacticDiscriminate(ElabEnv(kernelEnv = kernelEnv), subState, None, Span.synthetic) match {
               case Right((_, done)) if done.isSolved =>
                 done.buildProofTerm.toOption.map(body => Term.Lam(n, dom, body))
-              case _ => None
+              case _ =>
+                OmegaTactic.solveGoal(kernelEnv, localCtx, norm)
             }
           case _ => None
         }
     }
+  }
+
+  // ===========================================================================
+  // Practical Combinators & Ergonomic Tactics:
+  // obtain, rename, tauto, try, repeat, all, first, <;>
+  // ===========================================================================
+
+  private def tacticObtain(
+    env: ElabEnv,
+    state: ProofState,
+    binders: List[String],
+    source: SurfaceExpr,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val goal = state.openGoals.head
+    val metaCtx = new MetaContext()
+    Elaborator.inferExpr(env, metaCtx, goal.localCtx, source).flatMap { case (rawTerm, rawType, nextEnv) =>
+      val term = metaCtx.zonk(rawTerm, goal.localCtx.depth)
+      val ty = NbE.normalize(nextEnv.kernelEnv, goal.localCtx, metaCtx.zonk(rawType, goal.localCtx.depth))
+      val (head, args) = Term.splitApps(ty)
+      head match {
+        case Term.Ind(indName) =>
+          nextEnv.kernelEnv.inductives.get(indName) match {
+            case Some(ind) if ind.constructors.length == 1 && ind.numIndices == 0 =>
+              val ctor = ind.constructors.head
+              if (binders.length < ctor.arity) {
+                Left(
+                  Diagnostic(
+                    Diagnostic.Severity.Error,
+                    "T072",
+                    s"'obtain' on '$indName' requires at least ${ctor.arity} binder(s), got ${binders.length}",
+                    span
+                  )
+                )
+              } else {
+                val params = args.take(ind.numParams)
+                val fieldBinders = ind.instantiateFields(ctor, params)
+
+                // If user supplied extra binders (e.g. `obtain(a, b, c) = h` on `A /\ (B /\ C)`),
+                // bind the last field temporarily and recursively destruct it!
+                val (directNames, tailBinders) =
+                  if (binders.length == ctor.arity) (binders, Nil)
+                  else {
+                    val tempName = s"_obt_${state.nextGoalId}"
+                    (binders.take(ctor.arity - 1) :+ tempName, binders.drop(ctor.arity - 1))
+                  }
+
+                val arity = ctor.arity
+                val subCtx = fieldBinders.zip(directNames).foldLeft(goal.localCtx) { case (c, (b, n)) =>
+                  c.push(n, b.ty)
+                }
+                val subId = state.nextGoalId
+                val subGoal = ProofGoal(subId, goal.label, subCtx, Term.shift(goal.targetType, arity))
+                val motive = Term.Lam("_obt", ty, Term.shift(goal.targetType, 1))
+                val nextState = state.replaceHead(
+                  List(subGoal),
+                  sols => Term.Match(indName, params, motive, term, List(MatchBranch(ctor.name, directNames, sols(subId)))),
+                  subId + 1
+                )
+                if (tailBinders.isEmpty) {
+                  Right((nextEnv, nextState))
+                } else {
+                  val tempName = directNames.last
+                  tacticObtain(nextEnv, nextState, tailBinders, SurfaceExpr.VarExpr(tempName, span), span)
+                }
+              }
+
+            case Some(_) =>
+              Left(Diagnostic(Diagnostic.Severity.Error, "T072", s"'obtain' requires a single-constructor type (And, Exists, Iff, Pair, Subset), found '$indName'", span))
+            case None =>
+              Left(Diagnostic(Diagnostic.Severity.Error, "T072", s"Unknown inductive type '$indName' in 'obtain'", span))
+          }
+        case _ =>
+          Left(Diagnostic(Diagnostic.Severity.Error, "T072", s"'obtain' expected an inductive type, found '${Pretty.show(ty, goal.localCtx.names)}'", span))
+      }
+    }
+  }
+
+  private def tacticRename(
+    env: ElabEnv,
+    state: ProofState,
+    oldName: String,
+    newName: String,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val goal = state.openGoals.head
+    val idx = goal.localCtx.entries.indexWhere(_.name == oldName)
+    if (idx < 0) {
+      return Left(Diagnostic(Diagnostic.Severity.Error, "T073", s"Cannot rename unknown hypothesis '$oldName'", span))
+    }
+    val updatedEntries = goal.localCtx.entries.updated(idx, goal.localCtx.entries(idx).copy(name = newName))
+    val subId = state.nextGoalId
+    val subGoal = ProofGoal(subId, goal.label, LocalCtx(updatedEntries), goal.targetType)
+    Right((env, state.replaceHead(List(subGoal), sols => sols(subId), subId + 1)))
+  }
+
+  private def runOnSelectedGoals(
+    env: ElabEnv,
+    state: ProofState,
+    targetGoalIds: List[Int],
+    body: List[TacticStmt]
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = boundary {
+    var curEnv = env
+    var curState = state
+    for (gid <- targetGoalIds) {
+      curState.focusGoal(gid) match {
+        case None => ()
+        case Some(focused) =>
+          val g = focused.openGoals.head
+          val singleInit = ProofState.initial(g.localCtx, g.targetType, g.label)
+          runScript(curEnv, singleInit, body) match {
+            case Left(err) => break(Left(err))
+            case Right((nextEnv, singleAfter)) =>
+              val idOffset = curState.nextGoalId
+              val rebasedSubgoals = singleAfter.openGoals.map(sg => sg.copy(goalId = sg.goalId + idOffset))
+              val nextNextId = idOffset + singleAfter.nextGoalId
+              val nextState = focused.replaceHead(
+                rebasedSubgoals,
+                sols => {
+                  val localSols = singleAfter.openGoals.map(sg => sg.goalId -> sols(sg.goalId + idOffset)).toMap
+                  singleAfter.reconstruct(localSols)
+                },
+                nextNextId,
+                markSorry = singleAfter.usedSorry
+              )
+              curEnv = nextEnv
+              curState = nextState
+          }
+      }
+    }
+    Right((curEnv, curState))
+  }
+
+  private def tacticSeqAll(
+    env: ElabEnv,
+    state: ProofState,
+    first: TacticStmt,
+    after: TacticStmt,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val _ = span
+    val tailGoalIds = state.openGoals.tail.map(_.goalId).toSet
+    step(env, state, first).flatMap { case (env1, state1) =>
+      val newSubgoalIds = state1.openGoals.map(_.goalId).filterNot(tailGoalIds.contains)
+      if (newSubgoalIds.isEmpty) Right((env1, state1))
+      else runOnSelectedGoals(env1, state1, newSubgoalIds, List(after))
+    }
+  }
+
+  private def tacticAllGoals(
+    env: ElabEnv,
+    state: ProofState,
+    body: List[TacticStmt],
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val _ = span
+    runOnSelectedGoals(env, state, state.openGoals.map(_.goalId), body)
+  }
+
+  private def tacticTry(
+    env: ElabEnv,
+    state: ProofState,
+    body: List[TacticStmt],
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val _ = span
+    val headId = state.openGoals.head.goalId
+    runOnSelectedGoals(env, state, List(headId), body) match {
+      case Right(res) => Right(res)
+      case Left(_)    => Right((env, state))
+    }
+  }
+
+  private def tacticRepeat(
+    env: ElabEnv,
+    state: ProofState,
+    body: List[TacticStmt],
+    maxSteps: Int,
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val _ = span
+    var curEnv = env
+    var curState = state
+    var steps = 0
+    var continuing = true
+    while (continuing && steps < maxSteps && !curState.isSolved) {
+      val prevGoal = curState.openGoals.head
+      val prevCount = curState.openGoals.length
+      runOnSelectedGoals(curEnv, curState, List(prevGoal.goalId), body) match {
+        case Right((nextEnv, nextState)) =>
+          val unchanged =
+            nextState.openGoals.length == prevCount &&
+              nextState.openGoals.headOption.exists(g => g.targetType == prevGoal.targetType && g.localCtx == prevGoal.localCtx)
+          if (unchanged) {
+            continuing = false
+          } else {
+            curEnv = nextEnv
+            curState = nextState
+            steps += 1
+          }
+        case Left(_) =>
+          continuing = false
+      }
+    }
+    Right((curEnv, curState))
+  }
+
+  private def tacticFirst(
+    env: ElabEnv,
+    state: ProofState,
+    branches: List[List[TacticStmt]],
+    span: Span
+  ): Either[Diagnostic, (ElabEnv, ProofState)] = boundary {
+    val headId = state.openGoals.head.goalId
+    for (br <- branches) {
+      runOnSelectedGoals(env, state, List(headId), br) match {
+        case Right(res) => break(Right(res))
+        case Left(_)    => ()
+      }
+    }
+    Left(Diagnostic(Diagnostic.Severity.Error, "T074", "All branches of 'first { ... }' failed", span))
+  }
+
+  /**
+   * Complete intuitionistic propositional logic solver (`tauto`) with 0 axioms.
+   * Handles `True`, `False`, `And`, `Or`, `Iff`, `Not`, `=>`, hypothesis splitting,
+   * forward Modus Ponens saturation, and backtracking disjunction/implication search.
+   */
+  def tacticTauto(env: ElabEnv, state: ProofState, span: Span): Either[Diagnostic, (ElabEnv, ProofState)] = {
+    val goal = state.openGoals.head
+    val single = ProofState.initial(goal.localCtx, goal.targetType, goal.label)
+    tautoSearch(env, single, depth = 10, destructedLevels = Set.empty, span) match {
+      case Some((nextEnv, solved)) if solved.isSolved =>
+        solved.buildProofTerm match {
+          case Right(pt) => Right((nextEnv, state.replaceHead(Nil, _ => pt, state.nextGoalId)))
+          case Left(err) => Left(Diagnostic(Diagnostic.Severity.Error, "T076", s"'tauto' proof reconstruction failed: $err", span))
+        }
+      case _ =>
+        Left(Diagnostic(Diagnostic.Severity.Error, "T076", s"'tauto' could not prove propositional goal:\n${goal.formatHuman(env.kernelEnv)}", span))
+    }
+  }
+
+  private def tautoSearch(
+    env: ElabEnv,
+    state: ProofState,
+    depth: Int,
+    destructedLevels: Set[Int],
+    span: Span
+  ): Option[(ElabEnv, ProofState)] = boundary {
+    if (state.isSolved) break(Some((env, state)))
+    if (depth <= 0) break(None)
+
+    // Solve multiple independent subgoals separately so each gets a full depth budget!
+    if (state.openGoals.length > 1) {
+      var curEnv = env
+      val solvedTerms = scala.collection.mutable.Map.empty[Int, Term]
+      for (g <- state.openGoals) {
+        val subInit = ProofState.initial(g.localCtx, g.targetType, g.label)
+        tautoSearch(curEnv, subInit, depth, destructedLevels, span) match {
+          case Some((eNext, done)) if done.isSolved =>
+            done.buildProofTerm match {
+              case Right(pt) =>
+                curEnv = eNext
+                solvedTerms(g.goalId) = pt
+              case Left(_) => break(None)
+            }
+          case _ => break(None)
+        }
+      }
+      val fullTerm = state.reconstruct(solvedTerms.toMap)
+      break(Some((curEnv, ProofState(Nil, state.nextGoalId, _ => fullTerm, state.usedSorry))))
+    }
+
+    // 1. Immediate closers (`True`, `refl`, `assumption`, `contradiction`, `discriminate`)
+    tacticTrivial(env, state, span) match {
+      case Right((e1, s1)) =>
+        tautoSearch(e1, s1, depth, destructedLevels, span).foreach(res => break(Some(res)))
+      case Left(_) => ()
+    }
+
+    val goal = state.openGoals.head
+    val normTarget = NbE.normalize(env.kernelEnv, goal.localCtx, goal.targetType)
+
+    // 2. Reversible right introductions: `Pi` / implication (`P => Q`, `~P`)
+    normTarget match {
+      case Term.Pi(_, _, _) =>
+        step(env, state, TacticStmt.Intro(Nil, span)) match {
+          case Right((e1, s1)) => break(tautoSearch(e1, s1, depth, destructedLevels, span))
+          case Left(_)         => ()
+        }
+      case _ => ()
+    }
+
+    // 3. Reversible left eliminations: `False`, `And`, `Iff`, `Or`, `Exists` (track De Bruijn level so never repeated!)
+    for (idx <- goal.localCtx.entries.indices) {
+      val hypLevel = goal.localCtx.depth - 1 - idx
+      val hypName = goal.localCtx.entries(idx).name
+      if (!destructedLevels.contains(hypLevel) && goal.localCtx.entries.indexWhere(_.name == hypName) == idx) {
+        val hypTy = NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(idx).get)
+        val (hypHead, _) = Term.splitApps(hypTy)
+        hypHead match {
+          case Term.Ind("False") | Term.Ind("And") | Term.Ind("Iff") | Term.Ind("Or") | Term.Ind("Exists") =>
+            step(env, state, TacticStmt.Cases(SurfaceExpr.VarExpr(hypName, span), None, Nil, span)) match {
+              case Right((e1, s1)) =>
+                break(tautoSearch(e1, s1, depth - 1, destructedLevels + hypLevel, span))
+              case Left(_) => ()
+            }
+          case _ => ()
+        }
+      }
+    }
+
+    // 4. Reversible right conjunction/iff split
+    val (targetHead, _) = Term.splitApps(normTarget)
+    targetHead match {
+      case Term.Ind("And") | Term.Ind("Iff") =>
+        step(env, state, TacticStmt.Split(span)) match {
+          case Right((e1, s1)) => break(tautoSearch(e1, s1, depth - 1, destructedLevels, span))
+          case Left(_)         => ()
+        }
+      case _ => ()
+    }
+
+    // 5. Forward Modus Ponens saturation: if `h : A => B` and `a : A` are both in context (and `B` not yet in context), derive `B`!
+    val existingTypes = goal.localCtx.entries.indices.map(i => NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(i).get)).toSet
+    for (idx <- goal.localCtx.entries.indices) {
+      val hypTy = NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(idx).get)
+      hypTy match {
+        case Term.Pi(_, dom, cod) if !Term.freeVarOccurs(cod, 0) =>
+          val codUnshifted = Term.shift(cod, -1)
+          val normDom = NbE.normalize(env.kernelEnv, goal.localCtx, dom)
+          val normCod = NbE.normalize(env.kernelEnv, goal.localCtx, codUnshifted)
+          if (!existingTypes.contains(normCod)) {
+            val argIdxOpt = goal.localCtx.entries.indices.find { j =>
+              NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(j).get) == normDom
+            }
+            argIdxOpt.foreach { argIdx =>
+              val mpProof = Term.App(Term.Var(idx), Term.Var(argIdx))
+              val mpName = s"_mp_${state.nextGoalId}"
+              val subId = state.nextGoalId
+              val subCtx = goal.localCtx.push(mpName, normCod, Some(mpProof))
+              val subGoal = ProofGoal(subId, goal.label, subCtx, Term.shift(goal.targetType, 1))
+              val nextState = state.replaceHead(
+                List(subGoal),
+                sols => Term.Let(mpName, normCod, mpProof, sols(subId)),
+                subId + 1
+              )
+              tautoSearch(env, nextState, depth - 1, destructedLevels, span).foreach(res => break(Some(res)))
+            }
+          }
+        case _ => ()
+      }
+    }
+
+    // 6. Backtracking disjunction right rules (`left` / `right`)
+    if (targetHead == Term.Ind("Or")) {
+      step(env, state, TacticStmt.LeftBranch(span)) match {
+        case Right((e1, s1)) => tautoSearch(e1, s1, depth - 1, destructedLevels, span).foreach(res => break(Some(res)))
+        case Left(_)         => ()
+      }
+      step(env, state, TacticStmt.RightBranch(span)) match {
+        case Right((e1, s1)) => tautoSearch(e1, s1, depth - 1, destructedLevels, span).foreach(res => break(Some(res)))
+        case Left(_)         => ()
+      }
+    }
+
+    // 7. Backward chaining on local implications `h : A => B` matching goal (or `h : A => False` via exfalso)
+    for (idx <- goal.localCtx.entries.indices) {
+      val hypTy = NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(idx).get)
+      hypTy match {
+        case Term.Pi(_, _, _) =>
+          val metaCtx = new MetaContext()
+          applyCoreTerm(env, state, goal, metaCtx, Term.Var(idx), hypTy, span) match {
+            case Right((e1, s1)) =>
+              tautoSearch(e1, s1, depth - 1, destructedLevels, span).foreach(res => break(Some(res)))
+            case Left(_) => ()
+          }
+        case _ => ()
+      }
+    }
+
+    // 8. Try `exfalso` if any negation `P => False` is in context and goal isn't already `False`
+    if (targetHead != Term.Ind("False")) {
+      val hasNeg = goal.localCtx.entries.indices.exists { idx =>
+        NbE.normalize(env.kernelEnv, goal.localCtx, goal.localCtx.lookupType(idx).get) match {
+          case Term.Pi(_, _, Term.Ind("False")) => true
+          case _                                => false
+        }
+      }
+      if (hasNeg) {
+        step(env, state, TacticStmt.Exfalso(span)) match {
+          case Right((e1, s1)) =>
+            tautoSearch(e1, s1, depth - 1, destructedLevels, span).foreach(res => break(Some(res)))
+          case Left(_) => ()
+        }
+      }
+    }
+
+    None
   }
 
   private def extractNatLit(term: Term): Option[Int] = term match {

@@ -10,7 +10,10 @@
 |---|---|---|---|
 | `a === b`（具体値。例: `2 + 3 === 5`） | `refl` または `decide` | `Eq.Refl`（コンパイル時評価） | 両辺を正規化して一致すれば証明完了 |
 | `a === b`（`+`, `*`, `0`, `Succ` から成る `Nat` の等式） | `arith`（または `ring`） | ボイラープレート自動合成 | 可換半環の恒等式を公理 0 の証明項で一括証明 |
-| `a === b`（`@simp` 補題や関数定義を含む） | `simp` または `simp(*)` | ボイラープレート自動合成 | 定義展開・`@simp` 規則適用（`*` は局所等式仮定も使用） |
+| `Le`・`Lt`・`ble`・`blt`・`beq`・線形 `Nat` 不等式と矛盾 | `omega`（または `lia`） | 線形算術ソルバ（公理 0） | 推移律・両辺消去・反対称性・背理法を一括証明 |
+| 等式連鎖・合同 `f(a) === f(b)`・単射性・矛盾 | `cc` | 合同閉包ソルバ（公理 0） | 多段等式置換・関数適用合同・コンストラクタ矛盾を自動証明 |
+| 直観主義命題論理（`=>`, `/\`, `\/`, `~`, `Iff`） | `tauto` | 命題論理決定手続き（公理 0） | 対偶・ド・モルガン・分配則等の恒真式を一括証明 |
+| `a === b`（`@simp` 補題や関数定義を含む） | `simp` / `simp(*)` / `simp in h` | ボイラープレート自動合成 | ゴール・仮定 `h`・全体 `*` を定義展開と `@simp` で簡約 |
 | `f(a) === f(b)` | `congr` | `congrArg(f, ...)` | `a === b` の証明へ帰着 |
 | `a === c`（中間式 `b` を経由したい） | `trans(b)` または `calc { ... }` | 等式キャストの連鎖 | `a === b` と `b === c` に分割 |
 | `a === b`（仮定に `h: b === a` がある） | `symmetry` | `eqSym(...)` | ゴールを `b === a` に反転 |
@@ -109,5 +112,37 @@ theorem mirrorTwice[Element](tree: Tree[Element]): mirror(mirror(tree)) === tree
       refl
     }
   }
+}
+```
+
+## パターン 6: 実用的な自動証明（`omega`・`cc`・`tauto`）とコンビネータ（`<;>`・`in hyp`・`obtain`・`by_cases`）
+
+証明生成型の決定手続きとタクティクコンビネータを組み合わせることで、実務的な証明を短く保てます。
+
+```scala
+import Prelude.*
+import Nat.*
+import WellFounded.*
+
+// 線形 Nat 不等式・両辺消去・反対称性・構成的背理法
+theorem strictFromNeq(a: Nat, b: Nat, hLe: Le(a, b), hNeq: a !== b): Lt(a, b) = by {
+  omega
+}
+
+// 多段の等式連鎖と関数適用の合同閉包
+theorem congruenceChain[A](f: A => A, g: A => A, a: A, b: A, c: A, h1: a === b, h2: f(b) === c):
+  g(f(a)) === g(c) = by {
+  cc
+}
+
+// 仮定の中身を直接書き換え・簡約（`in h` / `in *`）
+theorem rewriteHyp(a: Nat, b: Nat, c: Nat, hEq: a === b, hLe: Le(a + 1, c)): Le(b, c) = by {
+  rewrite(hEq) in hLe
+  omega
+}
+
+// フラット分解（`obtain`）と全サブゴール連鎖（`<;>`, `by_cases`, `first`, `try`, `all`）
+theorem totalOrder(a: Nat, b: Nat): (ble(a, b) === true) \/ (ble(b, a) === true) = by {
+  by_cases(ble(a, b), cmp) <;> first { { left; omega } | { right; omega } }
 }
 ```

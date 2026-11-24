@@ -1114,7 +1114,7 @@ object Elaborator {
     // 2. Apply each matching branch equality (`_wf_eq_*`) individually without aborting on non-matching ones
     val eqHypNames = localCtx.entries.map(_.name).filter(_.startsWith("_wf_eq_"))
     val rewrittenState: ProofState = eqHypNames.foldLeft(initState) { (st, hypName) =>
-      Tactics.step(cleanEnv, st, TacticStmt.Rewrite(List(SurfaceExpr.VarExpr(hypName, callSpan)), reverse = false, callSpan)) match {
+      Tactics.step(cleanEnv, st, TacticStmt.Rewrite(List(SurfaceExpr.VarExpr(hypName, callSpan)), reverse = false, target = None, callSpan)) match {
         case Right((_, nextSt)) => nextSt
         case Left(_)            => st
       }
@@ -1139,14 +1139,15 @@ object Elaborator {
       }
     }
 
-    val simpStep = TacticStmt.Simp(Nil, includeLocalHyps = true, callSpan)
+    val simpStep = TacticStmt.Simp(Nil, includeLocalHyps = true, target = None, callSpan)
     val decideStep = TacticStmt.Decide(callSpan)
+    val omegaStep = TacticStmt.Omega(callSpan)
     val autoStep = TacticStmt.Auto(Some(6), callSpan)
 
     val normLtRewritten = normalizeInsideLt(rewrittenState)
     val normLtInit = normalizeInsideLt(initState)
 
-    // Helper to close all open subgoals with simp / assumption / decide / auto / @wf lemmas
+    // Helper to close all open subgoals with simp / assumption / decide / omega / auto / @wf lemmas
     def solveState(state: ProofState, depth: Int): Option[ProofState] = boundary {
       if (state.isSolved) break(Some(state))
       if (depth <= 0) break(None)
@@ -1156,6 +1157,7 @@ object Elaborator {
         TacticStmt.Assumption(callSpan),
         TacticStmt.Refl(callSpan),
         decideStep,
+        omegaStep,
         autoStep
       )
       for (qt <- quickTactics) {

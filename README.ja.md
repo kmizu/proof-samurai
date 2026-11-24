@@ -86,10 +86,10 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 - `src/main/scala/samurai/kernel/` — 信頼カーネル（`Term`, `Env`, `NbE`, `Positivity`, `Termination`, `TypeChecker`, `Pretty`）
 - `src/main/scala/samurai/syntax/` — インデント非依存 Scala 3 ブレース構文の字句解析・AST・パーサ
 - `src/main/scala/samurai/elab/` — 双方向エラボレータ、メタ変数単一化、パターンマッチコンパイラ、`calc`・`termination_by` 展開
-- `src/main/scala/samurai/tactic/` — LCF スタイルタクティク、証明生成型 `ArithTactic`（`arith` / `ring`）、`ProofSearch`（`auto`, `suggest`）
+- `src/main/scala/samurai/tactic/` — LCF スタイルタクティク・コンビネータ（`<;>`, `in hyp`, `obtain`, `by_cases`, `tauto`）、証明生成型 `ArithTactic`（`arith`/`ring`）、`OmegaTactic`（`omega`/`lia`）、`CongruenceClosure`（`cc`）、`ProofSearch`（`auto`, `suggest`）
 - `src/main/scala/samurai/extract/` — `Prop`・型消去 IR およびコード生成器（`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`）
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — 組み込み HTTP サーバと Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — 分岐対応 NDJSON 証明サーバ（`ProofSessionServer`）と複数行 REPL
 - `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`）
-- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`）
+- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`）
 - `docs/` — 英語・日本語（`docs/ja/`）ドキュメントおよび GitHub Pages サイト

@@ -1000,7 +1000,48 @@ object Parser {
       stmts.result()
     }
 
-    private def parseTacticStmt(): TacticStmt = current.kind match {
+    private def parseOptionalInTarget(): Option[String] = {
+      current.kind match {
+        case TokenKind.Ident("in") =>
+          advance()
+          if (current.kind == TokenKind.Star) {
+            advance()
+            Some("*")
+          } else {
+            Some(expectIdent("hypothesis name or '*' after 'in'")._1)
+          }
+        case _ => None
+      }
+    }
+
+    private def parseTacticBlockOrSingle(): List[TacticStmt] = {
+      if (current.kind == TokenKind.LBrace) {
+        advance()
+        val inner = parseTacticsUntil(TokenKind.RBrace)
+        expect(TokenKind.RBrace, "'}' closing tactic block")
+        inner
+      } else {
+        List(parseTacticStmt())
+      }
+    }
+
+    private def parseTacticStmt(): TacticStmt = {
+      var left = parseAtomicTacticStmt()
+      while (current.kind == TokenKind.SeqAll) {
+        advance()
+        val right = parseAtomicTacticStmt()
+        left = TacticStmt.SeqAll(left, right, left.span.merge(right.span))
+      }
+      left
+    }
+
+    private def parseAtomicTacticStmt(): TacticStmt = current.kind match {
+      case TokenKind.LBrace =>
+        val start = advance()
+        val inner = parseTacticsUntil(TokenKind.RBrace)
+        val end = expect(TokenKind.RBrace, "'}' closing tactic block")
+        TacticStmt.Block(inner, start.span.merge(end.span))
+
       case TokenKind.KwSorry =>
         val tok = advance()
         TacticStmt.Sorry(tok.span)
@@ -1041,12 +1082,14 @@ object Parser {
           case "rewrite" =>
             val lemmas = parseParenExprList()
             if (lemmas.isEmpty) fail("P015", "'rewrite' requires at least one lemma argument", start.span)
-            TacticStmt.Rewrite(lemmas, reverse = false, start.span.merge(peek(-1).span))
+            val target = parseOptionalInTarget()
+            TacticStmt.Rewrite(lemmas, reverse = false, target, start.span.merge(peek(-1).span))
 
           case "rewriteRev" | "rewriteBack" =>
             val lemmas = parseParenExprList()
             if (lemmas.isEmpty) fail("P015", "'rewriteRev' requires at least one lemma argument", start.span)
-            TacticStmt.Rewrite(lemmas, reverse = true, start.span.merge(peek(-1).span))
+            val target = parseOptionalInTarget()
+            TacticStmt.Rewrite(lemmas, reverse = true, target, start.span.merge(peek(-1).span))
 
           case "congr" | "congruence" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
@@ -1069,9 +1112,36 @@ object Parser {
             val cases = if (current.kind == TokenKind.LBrace) parseTacticCasesBlock() else Nil
             TacticStmt.Cases(target, eqName, cases, start.span.merge(peek(-1).span))
 
+          case "by_cases" | "byCases" =>
+            expect(TokenKind.LParen, "'(' for by_cases")
+            val cond = expr()
+            val eqName =
+              if (current.kind == TokenKind.Comma) {
+                advance()
+                Some(expectIdent("equation hypothesis name")._1)
+              } else None
+            expect(TokenKind.RParen, "')' for by_cases")
+            val cases = if (current.kind == TokenKind.LBrace) parseTacticCasesBlock() else Nil
+            TacticStmt.ByCases(cond, eqName, cases, start.span.merge(peek(-1).span))
+
+          case "obtain" =>
+            val binders = parseParenIdentList()
+            if (binders.isEmpty) fail("P015", "'obtain' requires at least one binder name", start.span)
+            expect(TokenKind.Eq, "'=' in obtain(x, y) = expr")
+            val src = expr()
+            TacticStmt.Obtain(binders, src, start.span.merge(src.span))
+
           case "revert" | "generalize" =>
             val names = parseParenIdentList()
             TacticStmt.Revert(names, start.span.merge(peek(-1).span))
+
+          case "rename" =>
+            expect(TokenKind.LParen, "'(' for rename")
+            val (oldName, _) = expectIdent("existing hypothesis name")
+            expect(TokenKind.Comma, "',' in rename(oldName, newName)")
+            val (newName, _) = expectIdent("new hypothesis name")
+            val end = expect(TokenKind.RParen, "')' for rename")
+            TacticStmt.Rename(oldName, newName, start.span.merge(end.span))
 
           case "exfalso" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
@@ -1150,32 +1220,87 @@ object Parser {
             TacticStmt.Unfold(defName, start.span.merge(end.span))
 
           case "simp" =>
-            if (current.kind == TokenKind.LParen) {
-              expect(TokenKind.LParen, "'('")
-              var includeLocals = false
-              val extras = List.newBuilder[SurfaceExpr]
-              if (current.kind != TokenKind.RParen) {
-                var more = true
-                while (more) {
-                  if (current.kind == TokenKind.Star) {
-                    advance()
-                    includeLocals = true
-                  } else {
-                    extras += expr()
+            val (extras, includeLocals) =
+              if (current.kind == TokenKind.LParen) {
+                expect(TokenKind.LParen, "'('")
+                var inc = false
+                val ex = List.newBuilder[SurfaceExpr]
+                if (current.kind != TokenKind.RParen) {
+                  var more = true
+                  while (more) {
+                    if (current.kind == TokenKind.Star) {
+                      advance()
+                      inc = true
+                    } else {
+                      ex += expr()
+                    }
+                    if (current.kind == TokenKind.Comma) advance()
+                    else more = false
                   }
-                  if (current.kind == TokenKind.Comma) advance()
-                  else more = false
                 }
-              }
-              expect(TokenKind.RParen, "')'")
-              TacticStmt.Simp(extras.result(), includeLocals, start.span.merge(peek(-1).span))
-            } else {
-              TacticStmt.Simp(Nil, includeLocalHyps = false, start.span)
-            }
+                expect(TokenKind.RParen, "')'")
+                (ex.result(), inc)
+              } else (Nil, false)
+            val target = parseOptionalInTarget()
+            TacticStmt.Simp(extras, includeLocals, target, start.span.merge(peek(-1).span))
 
           case "arith" | "ring" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
             TacticStmt.Arith(start.span)
+
+          case "omega" | "lia" =>
+            if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
+            TacticStmt.Omega(start.span)
+
+          case "cc" | "congruence_closure" =>
+            if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
+            TacticStmt.CongruenceClosure(start.span)
+
+          case "tauto" =>
+            if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }
+            TacticStmt.Tauto(start.span)
+
+          case "try" =>
+            val body = parseTacticBlockOrSingle()
+            TacticStmt.Try(body, start.span.merge(peek(-1).span))
+
+          case "repeat" =>
+            val maxSteps =
+              if (current.kind == TokenKind.LParen) {
+                expect(TokenKind.LParen, "'('")
+                val n = current.kind match {
+                  case TokenKind.IntLit(v) => advance(); Some(v)
+                  case other               => fail("P015", s"Expected integer iteration bound in repeat(...), found $other")
+                }
+                expect(TokenKind.RParen, "')'")
+                n
+              } else None
+            val body = parseTacticBlockOrSingle()
+            TacticStmt.Repeat(body, maxSteps, start.span.merge(peek(-1).span))
+
+          case "all" | "all_goals" =>
+            val body = parseTacticBlockOrSingle()
+            TacticStmt.AllGoals(body, start.span.merge(peek(-1).span))
+
+          case "first" =>
+            expect(TokenKind.LBrace, "'{' for first { ... | ... }")
+            val branches = List.newBuilder[List[TacticStmt]]
+            skipSemis()
+            while (current.kind != TokenKind.RBrace && current.kind != TokenKind.Eof) {
+              val branch = List.newBuilder[TacticStmt]
+              while (current.kind != TokenKind.Pipe && current.kind != TokenKind.RBrace && current.kind != TokenKind.Eof) {
+                branch += parseTacticStmt()
+                skipSemis()
+              }
+              val bList = branch.result()
+              if (bList.nonEmpty) branches += bList
+              if (current.kind == TokenKind.Pipe) {
+                advance()
+                skipSemis()
+              }
+            }
+            val end = expect(TokenKind.RBrace, "'}' closing first")
+            TacticStmt.First(branches.result(), start.span.merge(end.span))
 
           case "trivial" =>
             if (current.kind == TokenKind.LParen) { advance(); expect(TokenKind.RParen, "')'") }

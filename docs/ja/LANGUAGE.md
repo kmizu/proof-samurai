@@ -152,9 +152,10 @@ theorem calcExample[Element](first: List[Element], second: List[Element], third:
 
 ## 組み込みタクティク一覧（`by { ... }`）
 
-- **基本構造**: `intro(x)`, `intros(x, y)`, `revert(x)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`
-- **等式操作**: `refl`, `symmetry`, `trans(mid)`, `rewrite(h1, h2, ...)`, `rewriteRev(h1, ...)`, `subst(eq)`, `congr`
-- **帰納型**: `induction(x) { case ... => { ... } }`, `cases(expr) { case ... => { ... } }`, `cases(expr, eqHyp) { case ... => { ... } }`, `discriminate`, `injection(h, name)`
-- **命題論理**: `split`, `left`, `right`, `exists(witness)`, `contradiction`, `exfalso`
-- **自動化**: `unfold(defName)`, `simp`, `simp(*)`, `simp(lem1, lem2)`, `arith` / `ring`（公理 0 の `Nat` 可換半環ソルバ）, `trivial`, `decide`, `auto`（別名 `samurai`）
+- **基本構造**: `intro(x)`, `intros(x, y)`, `revert(x)`, `rename(old, new)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`, `obtain(x, h) = expr`
+- **等式操作**: `refl`, `symmetry`, `trans(mid)`, `rewrite(h1, ...) [in h | in *]`, `rewriteRev(h1, ...) [in h | in *]`, `subst(eq)`, `congr`
+- **帰納型**: `induction(x) { case ... => { ... } }`, `cases(expr[, eqHyp]) { case ... => { ... } }`, `by_cases(cond[, h])`, `discriminate`, `injection(h, name)`
+- **命題論理**: `split`, `left`, `right`, `exists(witness)`, `contradiction`, `exfalso`, `tauto`（公理 0 の直観主義命題論理ソルバ）
+- **自動化**: `unfold(defName)`, `simp[(lem, *)] [in h | in *]`, `arith` / `ring`（公理 0 の `Nat` 可換半環ソルバ）, `omega` / `lia`（公理 0 の線形 `Nat` 算術・不等式ソルバ）, `cc`（公理 0 の合同閉包ソルバ）, `trivial`, `decide`, `auto`（別名 `samurai`）
+- **コンビネータ**: `t1 <;> t2`, `all { ... }`, `try { ... }`, `repeat { ... }`, `first { t1 | t2 | ... }`
 - **開発支援**: `?holeName`（未完ゴール検査）, `sorry`（カーネルの信頼レポートで明示的に追跡される）

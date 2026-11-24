@@ -110,7 +110,8 @@ Thinking of each tactic as the ordinary code construct it emits makes proofs pre
 | `rewrite(eq)` | Type-safe cast via equality | Replaces `a` with `b` in the expected type using `eq: a === b` |
 | `discriminate(h)` | Unreachable branch (`Nothing`) | Proves a branch with `0 === Succ(n)` or `true === false` is dead code |
 | `injection(h, eq)` | Constructor deconstruction | Extracts `a === b` from `Succ(a) === Succ(b)` |
-| `simp` / `arith` / `auto` | Verified boilerplate generators | Synthesizes simplification, semiring, or logic terms checked by the kernel |
+| `simp` / `arith` / `omega` / `cc` / `tauto` / `auto` | Verified boilerplate generators | Synthesizes simplification, semiring, linear-inequality, congruence-closure, or logic terms checked by the kernel |
+| `t1 <;> t2` / `rewrite(...) in h` / `obtain(x, h) = e` | Proof-script combinators | Applies `t2` to every subgoal from `t1`, rewrites inside hypothesis `h`, or unpacks tuples/existentials in one line |
 
 ---
 

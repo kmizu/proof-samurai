@@ -1,0 +1,170 @@
+module PracticalProving {
+  import Prelude.*
+  import Nat.*
+  import List.*
+  import WellFounded.*
+
+  // =========================================================================
+  // 1. `omega` — Proof-Producing Linear Nat Arithmetic & Inequality Solver
+  // =========================================================================
+
+  theorem omegaChain(a: Nat, b: Nat, c: Nat, d: Nat, h1: Le(a, b), h2: Le(b, c), h3: Le(c, d)):
+    Le(a, d) = by {
+    omega
+  }
+
+  theorem omegaStrictMix(a: Nat, b: Nat, c: Nat, h1: Lt(a, b), h2: Le(b, c)):
+    Lt(a, c + 1) = by {
+    omega
+  }
+
+  theorem omegaAddBoth(a: Nat, b: Nat, c: Nat, d: Nat, h1: Le(a, b), h2: Le(c, d)):
+    Le(a + c, b + d) = by {
+    omega
+  }
+
+  theorem omegaCancelLe(a: Nat, b: Nat, c: Nat, h: Le(a + c, b + c)):
+    Le(a, b) = by {
+    omega
+  }
+
+  theorem omegaCancelEq(a: Nat, b: Nat, c: Nat, h: a + c === b + c):
+    a === b = by {
+    omega
+  }
+
+  theorem omegaAntisym(a: Nat, b: Nat, h1: Le(a, b), h2: Le(b, a)):
+    a === b = by {
+    omega
+  }
+
+  theorem omegaStrictFromNeq(a: Nat, b: Nat, hLe: Le(a, b), hNeq: a !== b):
+    Lt(a, b) = by {
+    omega
+  }
+
+  theorem omegaNonZeroGeOne(n: Nat, hNeq: n !== 0):
+    Le(1, n) = by {
+    omega
+  }
+
+  theorem omegaBoolBridge(a: Nat, b: Nat, h: ble(a, b) === false):
+    ble(b, a) === true = by {
+    omega
+  }
+
+  theorem omegaContradiction(a: Nat, b: Nat, h1: Lt(a, b), h2: Le(b, a)):
+    1 === 2 = by {
+    omega
+  }
+
+  // `omega` also powers automatic `termination_by` decrease proving (no `decreasing_by` needed!)
+  def stepDownByTwo(n: Nat): Nat = {
+    n match {
+      case 0 => 0
+      case 1 => 1
+      case Nat.Succ(Nat.Succ(rest)) => 1 + stepDownByTwo(rest)
+    }
+  } termination_by {
+    n
+  }
+
+  theorem stepDownCheck: stepDownByTwo(6) === 3 = by {
+    refl
+  }
+
+  // =========================================================================
+  // 2. `cc` — Proof-Producing Congruence Closure + Injectivity / Disjointness
+  // =========================================================================
+
+  theorem ccChain[A](
+    f: A => A,
+    g: A => A,
+    a: A,
+    b: A,
+    c: A,
+    d: A,
+    h1: a === b,
+    h2: f(b) === c,
+    h3: g(c) === d
+  ): g(f(a)) === d = by {
+    cc
+  }
+
+  theorem ccHigherOrder[A, B](f: A => B, g: A => B, x: A, y: A, hFn: f === g, hArg: x === y):
+    f(x) === g(y) = by {
+    cc
+  }
+
+  theorem ccInjection(f: Nat => Nat, a: Nat, b: Nat, h: Nat.Succ(a) === Nat.Succ(b)):
+    f(a) === f(b) = by {
+    cc
+  }
+
+  theorem ccDisjoint(x: Nat, n: Nat, h1: x === 0, h2: x === Nat.Succ(n)):
+    1 === 2 = by {
+    cc
+  }
+
+  // =========================================================================
+  // 3. `tauto` — Complete Intuitionistic Propositional Tautology Solver
+  // =========================================================================
+
+  theorem tautoContrapositive(p: Prop, q: Prop): (p => q) => (~q => ~p) = by {
+    tauto
+  }
+
+  theorem tautoDeMorgan(p: Prop, q: Prop): Iff[~(p \/ q), (~p /\ ~q)] = by {
+    tauto
+  }
+
+  theorem tautoTripleNeg(p: Prop): ~~~p => ~p = by {
+    tauto
+  }
+
+  theorem tautoDistrib(p: Prop, q: Prop, r: Prop): (p /\ (q \/ r)) => ((p /\ q) \/ (p /\ r)) = by {
+    tauto
+  }
+
+  // =========================================================================
+  // 4. Combinators & Ergonomic Tactics: `<;>`, `in hyp`, `obtain`, `by_cases`
+  // =========================================================================
+
+  theorem rewriteInHypDemo(a: Nat, b: Nat, c: Nat, hEq: a === b, hLe: Le(a + 1, c)):
+    Le(b, c) = by {
+    rewrite(hEq) in hLe
+    omega
+  }
+
+  theorem simpInHypDemo(a: Nat, b: Nat, h: (a + 0) === (b + 0)):
+    a === b = by {
+    simp in h
+    exact(h)
+  }
+
+  theorem obtainNestedDemo(p: Nat => Prop, q: Nat => Prop, h: exists (x: Nat) => p(x) /\ q(x)):
+    exists (x: Nat) => q(x) /\ p(x) = by {
+    obtain(witness, hp, hq) = h
+    exists(witness)
+    split
+    exact(hq)
+    exact(hp)
+  }
+
+  theorem seqAllByCasesDemo(a: Nat, b: Nat): (ble(a, b) === true) \/ (ble(b, a) === true) = by {
+    by_cases(ble(a, b), cmp) <;> first { { left; omega } | { right; omega } }
+  }
+
+  theorem seqAllInductionDemo(n: Nat): n + 0 === n = by {
+    induction(n) <;> simp
+  }
+
+  theorem decideNegLe: ~Le(5, 2) = by {
+    decide
+  }
+
+  #axioms omegaStrictFromNeq
+  #axioms ccChain
+  #axioms tautoDeMorgan
+  #axioms seqAllByCasesDemo
+}
