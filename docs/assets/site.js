@@ -7,9 +7,10 @@
     { num: "05", file: "EXTRACTION.md", group: "manual", title: { en: "Verified Code Extraction", ja: "検証済みコード抽出" }, desc: { en: "Prop erasure rules, Scala 3 / TypeScript / JavaScript / Haskell / OCaml output, and --strict / --total gates.", ja: "Prop 消去規則、Scala 3 / TypeScript / JavaScript / Haskell / OCaml 出力、--strict / --total 検証ゲート。" } },
     { num: "06", file: "IO_VERIFICATION.md", group: "manual", title: { en: "Verifying Effectful & IO Programs", ja: "IO・副作用プログラムの形式検証" }, desc: { en: "Zero-axiom Free Monad IO/Eff trees, do-notation, trace semantics, HoareIO invariants, and native runtime runners.", ja: "公理 0 の Free モナド IO/Eff 木、do 構文、トレース意味論、HoareIO 不変条件、各言語の実ランタイム接続。" } },
     { num: "07", file: "TROUBLESHOOTING.md", group: "manual", title: { en: "Kernel & Type Error Guide", ja: "カーネル・型エラー解決ガイド" }, desc: { en: "Causes and fixes for K005, K006, K020, K025, K026, K030, K031, T010, and T015.", ja: "K005 / K006 / K020 / K025 / K026 / K030 / K031 / T010 / T015 の原因と修正例。" } },
-    { num: "08", file: "KERNEL.md", group: "internals", title: { en: "Trusted Kernel Architecture", ja: "信頼カーネルのアーキテクチャ" }, desc: { en: "Universe stratification, strict positivity, termination, and subsingleton elimination.", ja: "宇宙階層、厳密正性、停止性検査、subsingleton 除去、公理追跡。" } },
-    { num: "09", file: "AI_AGENT_GUIDE.md", group: "internals", title: { en: "AI Agent Guide", ja: "AI エージェント連携ガイド" }, desc: { en: "Using the NDJSON server for LLM proof synthesis, MCTS, and CLI verification.", ja: "NDJSON サーバによる LLM 証明合成、木探索、CLI 自動検証ワークフロー。" } },
-    { num: "10", file: "AI_PROTOCOL.md", group: "internals", title: { en: "JSON-RPC Protocol Reference", ja: "JSON-RPC プロトコル仕様" }, desc: { en: "Method reference for proveGoal, step, batchStep, inspectHoles, and extract.", ja: "proveGoal / step / batchStep / inspectHoles / extract の仕様一覧。" } }
+    { num: "08", file: "COC_CIC.md", group: "internals", title: { en: "CoC & CIC: Inside the Theorem Prover", ja: "CoC / CIC 入門：定理証明器の正体" }, desc: { en: "Curry-Howard, Lambda Cube, Pi types, inductive motives, NbE conversion, the 12 core Term nodes, and why each soundness guard blocks a paradox.", ja: "カリー＝ハワード対応、ラムダキューブ、依存積 Pi、帰納型と motive、NbE 変換規則、たった 12 種のコア Term、各健全性検査とパラドックスの関係。" } },
+    { num: "09", file: "KERNEL.md", group: "internals", title: { en: "Trusted Kernel Architecture", ja: "信頼カーネルのアーキテクチャ" }, desc: { en: "Universe stratification, strict positivity, termination, and subsingleton elimination.", ja: "宇宙階層、厳密正性、停止性検査、subsingleton 除去、公理追跡。" } },
+    { num: "10", file: "AI_AGENT_GUIDE.md", group: "internals", title: { en: "AI Agent Guide", ja: "AI エージェント連携ガイド" }, desc: { en: "Using the NDJSON server for LLM proof synthesis, MCTS, and CLI verification.", ja: "NDJSON サーバによる LLM 証明合成、木探索、CLI 自動検証ワークフロー。" } },
+    { num: "11", file: "AI_PROTOCOL.md", group: "internals", title: { en: "JSON-RPC Protocol Reference", ja: "JSON-RPC プロトコル仕様" }, desc: { en: "Method reference for proveGoal, step, batchStep, inspectHoles, and extract.", ja: "proveGoal / step / batchStep / inspectHoles / extract の仕様一覧。" } }
   ];
 
   const STDLIB_MODULES = [
@@ -227,7 +228,7 @@ object VerifiedSorting {
   function highlightSamurai(code) {
     const escaped = escapeHtml(code);
     const tokenRe =
-      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|partial|mutual|termination_by|decreasing_by|val|theorem|lemma|axiom|match|if|else|by|calc|forall|exists|returning|sorry|true|false|object|final)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|Lt|Acc|And|Or|Not|False|True|Unit|Either)\b|\b([0-9]+)\b|(===|!==|=&gt;|->|\/\\|\\\/|::|\+\+)/g;
+      /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|(\?[A-Za-z_][A-Za-z0-9_']*|\?)|\b(module|import|enum|case|class|def|partial|mutual|termination_by|decreasing_by|val|theorem|lemma|axiom|match|if|else|by|calc|do|forall|exists|returning|sorry|true|false|object|final)\b|\b(intro|intros|exact|apply|refl|symmetry|trans|rewrite|rewriteRev|congr|induction|cases|by_cases|obtain|rename|revert|exfalso|subst|specialize|split|left|right|contradiction|discriminate|injection|have|unfold|simp|arith|ring|omega|lia|cc|tauto|trivial|decide|auto|samurai|assumption)\b|\b(Prop|Type[0-9]*|Nat|Bool|List|Vec|Tree|Option|Queue|Pair|Subset|Eq|Le|Lt|Acc|And|Or|Not|False|True|Unit|Either|IO|Eff|IOResult|HoareIO|Term|Sort)\b|\b([0-9]+)\b|(===|!==|=&gt;|&lt;-|->|\/\\|\\\/|::|\+\+)/g;
 
     return escaped.replace(tokenRe, (m, comment, hole, kw, tactic, ty, num, op) => {
       if (comment) return `<span class="tok-comment">${comment}</span>`;
@@ -276,12 +277,20 @@ object VerifiedSorting {
       }
     };
 
-    const inlineFmt = (text) =>
-      escapeHtml(text)
+    const inlineFmt = (text) => {
+      const codeSpans = [];
+      const masked = escapeHtml(text).replace(/`([^`]+)`/g, (_, c) => {
+        const i = codeSpans.length;
+        codeSpans.push(`<code>${c}</code>`);
+        return `@@CODESPAN_${i}@@`;
+      });
+      return masked
         .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\[([^\]]+)\]\(([A-Z0-9_]+\.md)\)/g, (_, label, file) => `<a href="#${currentLang}/${file}">${label}</a>`)
         .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-        .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+        .replace(/@@CODESPAN_(\d+)@@/g, (_, idx) => codeSpans[Number(idx)]);
+    };
 
     for (const line of lines) {
       const cbMatch = line.trim().match(/^@@CODEBLOCK_(\d+)@@$/);

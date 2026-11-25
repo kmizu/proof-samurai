@@ -1,5 +1,7 @@
 # Proof Samurai Trusted Kernel Architecture
 
+*New to dependent type theory? Start with [CoC & CIC: Inside the Theorem Prover](COC_CIC.md) for a self-contained explanation of Curry-Howard, `Pi` types, inductive motives, NbE conversion, and why each soundness guard blocks a concrete paradox.*
+
 Proof Samurai follows the **de Bruijn criterion**: all surface elaboration, metavariable unification, pattern compilation, tactic scripts, automated proof search (`auto`), and AI agent sessions are **untrusted**. Every declaration and proof term must pass through the small, independent Trusted Kernel (`samurai.kernel`) before entering `KernelEnv`.
 
 ## Soundness Guarantees

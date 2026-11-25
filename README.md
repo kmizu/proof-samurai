@@ -76,6 +76,7 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - [Verified Code Extraction](docs/EXTRACTION.md) / [検証済みコード抽出](docs/ja/EXTRACTION.md)
 - [Verifying Effectful & IO Programs](docs/IO_VERIFICATION.md) / [IO・副作用プログラムの形式検証](docs/ja/IO_VERIFICATION.md)
 - [Kernel & Type Error Guide](docs/TROUBLESHOOTING.md) / [カーネル・型エラー解決ガイド](docs/ja/TROUBLESHOOTING.md)
+- [CoC & CIC: Inside the Theorem Prover](docs/COC_CIC.md) / [CoC / CIC 入門：定理証明器の正体](docs/ja/COC_CIC.md)
 - [Trusted Kernel Architecture](docs/KERNEL.md) / [信頼カーネルのアーキテクチャ](docs/ja/KERNEL.md)
 - [AI Agent Guide](docs/AI_AGENT_GUIDE.md) / [AI エージェント連携ガイド](docs/ja/AI_AGENT_GUIDE.md)
 - [JSON-RPC Protocol Reference](docs/AI_PROTOCOL.md) / [JSON-RPC プロトコル仕様](docs/ja/AI_PROTOCOL.md)

@@ -309,9 +309,10 @@ object StudioServer {
               ("extraction", "05 検証済みコード抽出", "docs/ja/EXTRACTION.md"),
               ("io-verification", "06 IO・副作用プログラムの形式検証", "docs/ja/IO_VERIFICATION.md"),
               ("troubleshooting", "07 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
-              ("kernel", "08 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
-              ("ai-guide", "09 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "10 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
+              ("coc-cic", "08 CoC / CIC 入門：定理証明器の正体", "docs/ja/COC_CIC.md"),
+              ("kernel", "09 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
+              ("ai-guide", "10 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "11 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
             )
           } else {
             List(
@@ -322,9 +323,10 @@ object StudioServer {
               ("extraction", "05 Verified Code Extraction", "docs/EXTRACTION.md"),
               ("io-verification", "06 Verifying Effectful & IO Programs", "docs/IO_VERIFICATION.md"),
               ("troubleshooting", "07 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
-              ("kernel", "08 Trusted Kernel Architecture", "docs/KERNEL.md"),
-              ("ai-guide", "09 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "10 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
+              ("coc-cic", "08 CoC & CIC: Inside the Theorem Prover", "docs/COC_CIC.md"),
+              ("kernel", "09 Trusted Kernel Architecture", "docs/KERNEL.md"),
+              ("ai-guide", "10 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "11 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
             )
           }
         val loaded = docFiles.flatMap { case (id, title, relPath) =>
