@@ -545,4 +545,86 @@ class ElaboratorTacticsSuite extends FunSuite {
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
   }
+
+  test("documentation examples: CoC/CIC guide Curry-Howard, 0 !== 1 from scratch, Eq laws, and direct induction verify axiom-free") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |
+        |def propId[P: Prop](p: P): P = { p }
+        |def modusPonensTerm[P: Prop, Q: Prop](p: P, f: P => Q): Q = { f(p) }
+        |def implTrans[P: Prop, Q: Prop, R: Prop](f: P => Q, g: Q => R): P => R = {
+        |  (p: P) => g(f(p))
+        |}
+        |def weaken[P: Prop, Q: Prop](p: P): Q => P = {
+        |  (_: Q) => p
+        |}
+        |def andCommTerm[P: Prop, Q: Prop](h: P /\ Q): Q /\ P = {
+        |  h match {
+        |    case And.Intro(hp, hq) => And.Intro[Q, P](hq, hp)
+        |  }
+        |}
+        |def orCommTerm[P: Prop, Q: Prop](h: P \/ Q): Q \/ P = {
+        |  h match {
+        |    case Or.Inl(hp) => Or.Inr[Q, P](hp)
+        |    case Or.Inr(hq) => Or.Inl[Q, P](hq)
+        |  }
+        |}
+        |def exFalsoTerm[P: Prop](absurd: False): P = {
+        |  absurd match {}
+        |}
+        |def contrapositiveTerm[P: Prop, Q: Prop](f: P => Q): (~Q) => (~P) = {
+        |  (notQ: Q => False) => (p: P) => notQ(f(p))
+        |}
+        |def doubleNegIntroTerm[P: Prop](p: P): ~(~P) = {
+        |  (notP: P => False) => notP(p)
+        |}
+        |
+        |def isZeroProp(n: Nat): Prop = {
+        |  n match {
+        |    case Nat.Zero    => True
+        |    case Nat.Succ(_) => False
+        |  }
+        |}
+        |
+        |def zeroNeqOneFromScratch(h: 0 === 1): False = {
+        |  h match returning ((y: Nat, _: Eq[Nat, 0](y)) => isZeroProp(y)) {
+        |    case Eq.Refl => True.Intro
+        |  }
+        |}
+        |
+        |def eqSubst[A: Type](P: A => Prop, x: A, y: A, eqProof: Eq[A, x](y), px: P(x)): P(y) = {
+        |  eqProof match returning ((z: A, _: Eq[A, x](z)) => P(z)) {
+        |    case Eq.Refl => px
+        |  }
+        |}
+        |
+        |def eqSymTerm[A: Type](x: A, y: A, h: x === y): y === x = {
+        |  eqSubst[A]((z: A) => z === x, x, y, h, Eq.Refl[A, x])
+        |}
+        |
+        |def eqTransTerm[A: Type](x: A, y: A, z: A, h1: x === y, h2: y === z): x === z = {
+        |  eqSubst[A]((w: A) => x === w, y, z, h2, h1)
+        |}
+        |
+        |def eqCongrTerm[A: Type, B: Type](f: A => B, x: A, y: A, h: x === y): f(x) === f(y) = {
+        |  eqSubst[A]((w: A) => f(x) === f(w), x, y, h, Eq.Refl[B, f(x)])
+        |}
+        |
+        |def addZeroRightDirect(n: Nat): n + 0 === n = {
+        |  n match returning ((k: Nat) => k + 0 === k) {
+        |    case Nat.Zero =>
+        |      Eq.Refl[Nat, Nat.Zero]
+        |    case Nat.Succ(pred) => {
+        |      val ih: pred + 0 === pred = addZeroRightDirect(pred)
+        |      eqCongrTerm[Nat, Nat]((k: Nat) => Nat.Succ(k), pred + 0, pred, ih)
+        |    }
+        |  }
+        |}
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+  }
 }
