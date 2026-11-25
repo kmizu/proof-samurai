@@ -4,7 +4,12 @@ import samurai.util.Span
 
 final case class SurfaceAnnotation(name: String, args: List[SurfaceExpr], span: Span)
 
-final case class ParamBinder(name: String, typeAnnotation: Option[SurfaceExpr], span: Span)
+final case class ParamBinder(
+  name: String,
+  typeAnnotation: Option[SurfaceExpr],
+  span: Span,
+  isBareArrowLeft: Boolean = false
+)
 
 final case class EnumCaseDecl(
   name: String,

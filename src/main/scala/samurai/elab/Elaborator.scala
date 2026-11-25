@@ -1691,9 +1691,10 @@ object Elaborator {
       NbE.evaluate(env.kernelEnv, evalEnv, metaCtx.zonk(expectedType, localCtx.depth), fuel) match {
         case Value.VPi(piName, piDomVal, piCodClosure) =>
           val piDomTerm = NbE.quote(env.kernelEnv, localCtx.depth, piDomVal, fuel)
-          // Handle `x => body` parsed as `ParamBinder("_", Some(VarExpr("x")))`!
+          // Handle bare `x => body` parsed as `ParamBinder("_", Some(VarExpr("x")), isBareArrowLeft = true)`
+          // without misinterpreting an explicit `(_: Nat) => body` wildcard annotation.
           val (binderName, explicitAnn) =
-            if (head.name == "_") {
+            if (head.isBareArrowLeft && head.name == "_") {
               head.typeAnnotation match {
                 case Some(SurfaceExpr.VarExpr(varName, _)) => (varName, None)
                 case other                                 => (piName, other)

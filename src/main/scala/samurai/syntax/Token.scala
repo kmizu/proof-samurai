@@ -56,6 +56,7 @@ enum TokenKind {
   // Operators
   case FatArrow   // =>
   case ThinArrow  // ->
+  case LeftArrow  // <-
   case Eq         // =
   case EqEqEq     // ===
   case BangEqEq   // !==

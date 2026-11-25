@@ -1,0 +1,431 @@
+module IO {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  // =========================================================================
+  // 1. Free Monad / Interaction Tree for Practical Verified IO (0 Axioms!)
+  // =========================================================================
+
+  enum IO[Result: Type]: Type {
+    case Pure(value: Result)
+    case PrintNat(value: Nat, next: IO[Result])
+    case ReadNat(cont: Nat => IO[Result])
+    case GetState(cont: Nat => IO[Result])
+    case PutState(newState: Nat, next: IO[Result])
+  }
+
+  def pure[A](value: A): IO[A] = {
+    IO.Pure[A](value)
+  }
+
+  def printNat(value: Nat): IO[Unit] = {
+    IO.PrintNat[Unit](value, IO.Pure[Unit](Unit.Mk))
+  }
+
+  def readNat: IO[Nat] = {
+    IO.ReadNat[Nat]((x: Nat) => IO.Pure[Nat](x))
+  }
+
+  def getState: IO[Nat] = {
+    IO.GetState[Nat]((s: Nat) => IO.Pure[Nat](s))
+  }
+
+  def putState(newState: Nat): IO[Unit] = {
+    IO.PutState[Unit](newState, IO.Pure[Unit](Unit.Mk))
+  }
+
+  def bind[A, B](action: IO[A], cont: A => IO[B]): IO[B] = {
+    action match {
+      case IO.Pure(v) => cont(v)
+      case IO.PrintNat(v, next) => IO.PrintNat[B](v, bind[A, B](next, cont))
+      case IO.ReadNat(k) => IO.ReadNat[B]((n: Nat) => bind[A, B](k(n), cont))
+      case IO.GetState(k) => IO.GetState[B]((s: Nat) => bind[A, B](k(s), cont))
+      case IO.PutState(s, next) => IO.PutState[B](s, bind[A, B](next, cont))
+    }
+  }
+
+  def mapIO[A, B](action: IO[A], transform: A => B): IO[B] = {
+    bind[A, B](action, (x: A) => pure[B](transform(x)))
+  }
+
+  def thenDo[A, B](first: IO[A], second: IO[B]): IO[B] = {
+    bind[A, B](first, (_: A) => second)
+  }
+
+  def whenIO(cond: Bool, action: IO[Unit]): IO[Unit] = {
+    if (cond) {
+      action
+    } else {
+      pure[Unit](Unit.Mk)
+    }
+  }
+
+  def modifyState(update: Nat => Nat): IO[Nat] = {
+    do {
+      val current <- getState
+      val updated = update(current)
+      putState(updated)
+      pure[Nat](updated)
+    }
+  }
+
+  def readN(count: Nat): IO[List[Nat]] = {
+    count match {
+      case Nat.Zero => pure[List[Nat]]([])
+      case Nat.Succ(pred) =>
+        do {
+          val head <- readNat
+          val tail <- readN(pred)
+          pure[List[Nat]](head :: tail)
+        }
+    }
+  }
+
+  def printList(items: List[Nat]): IO[Unit] = {
+    items match {
+      case [] => pure[Unit](Unit.Mk)
+      case head :: tail =>
+        do {
+          printNat(head)
+          printList(tail)
+        }
+    }
+  }
+
+  // =========================================================================
+  // 2. Generic Algebraic Effects (`Eff[Req, Resp, Result]`) for Custom Domains
+  // =========================================================================
+
+  enum Eff[Req: Type, Resp: Type, Result: Type]: Type {
+    case Done(value: Result)
+    case Call(request: Req, cont: Resp => Eff[Req, Resp, Result])
+  }
+
+  def effPure[Req, Resp, A](value: A): Eff[Req, Resp, A] = {
+    Eff.Done[Req, Resp, A](value)
+  }
+
+  def perform[Req, Resp](request: Req): Eff[Req, Resp, Resp] = {
+    Eff.Call[Req, Resp, Resp](request, (resp: Resp) => Eff.Done[Req, Resp, Resp](resp))
+  }
+
+  def effBind[Req, Resp, A, B](action: Eff[Req, Resp, A], cont: A => Eff[Req, Resp, B]): Eff[Req, Resp, B] = {
+    action match {
+      case Eff.Done(v) => cont(v)
+      case Eff.Call(req, k) => Eff.Call[Req, Resp, B](req, (resp: Resp) => effBind[Req, Resp, A, B](k(resp), cont))
+    }
+  }
+
+  def handleEff[Req, Resp, World, Result](
+    prog: Eff[Req, Resp, Result],
+    step: Req => World => Pair[Resp, World],
+    initWorld: World
+  ): Pair[Result, World] = {
+    prog match {
+      case Eff.Done(v) => Pair[Result, World](v, initWorld)
+      case Eff.Call(req, k) => {
+        val next = step(req)(initWorld)
+        handleEff[Req, Resp, World, Result](k(next.first), step, next.second)
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. Deterministic Trace & World Semantics (`IOResult` & `runIO`)
+  // =========================================================================
+
+  case class IOResult[Result](
+    value: Result,
+    remainingInputs: List[Nat],
+    outputs: List[Nat],
+    finalState: Nat
+  )
+
+  def runIO[Result](prog: IO[Result], inputs: List[Nat], initState: Nat): IOResult[Result] = {
+    prog match {
+      case IO.Pure(v) =>
+        IOResult[Result](v, inputs, [], initState)
+      case IO.PrintNat(v, next) => {
+        val res = runIO[Result](next, inputs, initState)
+        IOResult[Result](res.value, res.remainingInputs, v :: res.outputs, res.finalState)
+      }
+      case IO.ReadNat(k) =>
+        inputs match {
+          case [] => runIO[Result](k(0), [], initState)
+          case head :: tail => runIO[Result](k(head), tail, initState)
+        }
+      case IO.GetState(k) =>
+        runIO[Result](k(initState), inputs, initState)
+      case IO.PutState(s, next) =>
+        runIO[Result](next, inputs, s)
+    }
+  }
+
+  // =========================================================================
+  // 4. Fundamental Composition & Monad Laws (100% Axiom-Free!)
+  // =========================================================================
+
+  theorem runIOBind[A, B](prog: IO[A], cont: A => IO[B]):
+    forall (inputs: List[Nat], initState: Nat) =>
+      runIO[B](bind[A, B](prog, cont), inputs, initState) === {
+        val firstRes = runIO[A](prog, inputs, initState)
+        val secondRes = runIO[B](cont(firstRes.value), firstRes.remainingInputs, firstRes.finalState)
+        IOResult[B](secondRes.value, secondRes.remainingInputs, firstRes.outputs ++ secondRes.outputs, secondRes.finalState)
+      } = by {
+    induction(prog) {
+      case Pure(v) => {
+        intros(inputs, initState)
+        cases(runIO[B](cont(v), inputs, initState)) <;> refl
+      }
+      case PrintNat(v, next, ih) => {
+        intros(inputs, initState)
+        simp
+        rewrite(ih(inputs, initState))
+        refl
+      }
+      case ReadNat(k, ih) => {
+        intros(inputs, initState)
+        cases(inputs) {
+          case Nil => {
+            exact(ih(0, [], initState))
+          }
+          case Cons(head, tail) => {
+            exact(ih(head, tail, initState))
+          }
+        }
+      }
+      case GetState(k, ih) => {
+        intros(inputs, initState)
+        exact(ih(initState, inputs, initState))
+      }
+      case PutState(s, next, ih) => {
+        intros(inputs, initState)
+        exact(ih(inputs, s))
+      }
+    }
+  }
+
+  // Observational / trace equivalence of IO programs
+  def IOEquiv[A](first: IO[A], second: IO[A]): Prop = {
+    forall (inputs: List[Nat], initState: Nat) =>
+      runIO[A](first, inputs, initState) === runIO[A](second, inputs, initState)
+  }
+
+  theorem ioLeftId[A, B](value: A, cont: A => IO[B]):
+    IOEquiv[B](bind[A, B](pure[A](value), cont), cont(value)) = by {
+    unfold(IOEquiv)
+    intros(inputs, initState)
+    refl
+  }
+
+  theorem ioRightId[A](prog: IO[A]):
+    IOEquiv[A](bind[A, A](prog, (x: A) => pure[A](x)), prog) = by {
+    unfold(IOEquiv)
+    intros(inputs, initState)
+    rewrite(runIOBind[A, A](prog, (x: A) => pure[A](x), inputs, initState))
+    cases(runIO[A](prog, inputs, initState)) {
+      case Mk(v, rem, out, st) => {
+        simp
+      }
+    }
+  }
+
+  theorem ioAssoc[A, B, C](prog: IO[A], first: A => IO[B], second: B => IO[C]):
+    IOEquiv[C](
+      bind[B, C](bind[A, B](prog, first), second),
+      bind[A, C](prog, (x: A) => bind[B, C](first(x), second))
+    ) = by {
+    unfold(IOEquiv)
+    induction(prog) {
+      case Pure(v) => {
+        intros(inputs, initState)
+        refl
+      }
+      case PrintNat(v, next, ih) => {
+        intros(inputs, initState)
+        simp
+        rewrite(ih(inputs, initState))
+        refl
+      }
+      case ReadNat(k, ih) => {
+        intros(inputs, initState)
+        cases(inputs) {
+          case Nil => { exact(ih(0, [], initState)) }
+          case Cons(head, tail) => { exact(ih(head, tail, initState)) }
+        }
+      }
+      case GetState(k, ih) => {
+        intros(inputs, initState)
+        exact(ih(initState, inputs, initState))
+      }
+      case PutState(s, next, ih) => {
+        intros(inputs, initState)
+        exact(ih(inputs, s))
+      }
+    }
+  }
+
+  // =========================================================================
+  // 5. Batch IO Stream Theorems (`printList`, `readN`)
+  // =========================================================================
+
+  @simp
+  theorem runIOPrintList(items: List[Nat]):
+    forall (inputs: List[Nat], initState: Nat) =>
+      runIO[Unit](printList(items), inputs, initState) === IOResult[Unit](Unit.Mk, inputs, items, initState) = by {
+    induction(items) {
+      case Nil => {
+        intros(inputs, initState)
+        refl
+      }
+      case Cons(head, tail, ih) => {
+        intros(inputs, initState)
+        simp
+        rewrite(ih(inputs, initState))
+        refl
+      }
+    }
+  }
+
+  theorem runIOReadN(items: List[Nat]):
+    forall (rest: List[Nat], initState: Nat) =>
+      runIO[List[Nat]](readN(length(items)), items ++ rest, initState) ===
+        IOResult[List[Nat]](items, rest, [], initState) = by {
+    induction(items) {
+      case Nil => {
+        intros(rest, initState)
+        refl
+      }
+      case Cons(head, tail, ih) => {
+        intros(rest, initState)
+        simp
+        rewrite(runIOBind[List[Nat], List[Nat]](readN(length(tail)), (t: List[Nat]) => pure[List[Nat]](head :: t), tail ++ rest, initState))
+        rewrite(ih(rest, initState))
+        refl
+      }
+    }
+  }
+
+  // =========================================================================
+  // 6. Compositional Hoare Logic for IO (`HoareIO`) — 100% Axiom-Free!
+  // =========================================================================
+
+  def HoareIO[A](
+    pre: List[Nat] => Nat => Prop,
+    prog: IO[A],
+    post: A => List[Nat] => List[Nat] => Nat => Prop
+  ): Prop = {
+    forall (inputs: List[Nat], initState: Nat) =>
+      pre(inputs, initState) => {
+        val res = runIO[A](prog, inputs, initState)
+        post(res.value, res.remainingInputs, res.outputs, res.finalState)
+      }
+  }
+
+  theorem hoarePure[A](
+    value: A,
+    post: A => List[Nat] => List[Nat] => Nat => Prop
+  ): HoareIO[A](
+    (inputs: List[Nat], st: Nat) => post(value, inputs, [], st),
+    pure[A](value),
+    post
+  ) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre)
+    exact(hPre)
+  }
+
+  theorem hoarePrintNat(
+    value: Nat,
+    post: Unit => List[Nat] => List[Nat] => Nat => Prop
+  ): HoareIO[Unit](
+    (inputs: List[Nat], st: Nat) => post(Unit.Mk, inputs, [value], st),
+    printNat(value),
+    post
+  ) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre)
+    exact(hPre)
+  }
+
+  theorem hoareGetState(
+    post: Nat => List[Nat] => List[Nat] => Nat => Prop
+  ): HoareIO[Nat](
+    (inputs: List[Nat], st: Nat) => post(st, inputs, [], st),
+    getState,
+    post
+  ) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre)
+    exact(hPre)
+  }
+
+  theorem hoarePutState(
+    newState: Nat,
+    post: Unit => List[Nat] => List[Nat] => Nat => Prop
+  ): HoareIO[Unit](
+    (inputs: List[Nat], st: Nat) => post(Unit.Mk, inputs, [], newState),
+    putState(newState),
+    post
+  ) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre)
+    exact(hPre)
+  }
+
+  theorem hoareConseq[A](
+    pre1: List[Nat] => Nat => Prop,
+    pre2: List[Nat] => Nat => Prop,
+    post1: A => List[Nat] => List[Nat] => Nat => Prop,
+    post2: A => List[Nat] => List[Nat] => Nat => Prop,
+    prog: IO[A],
+    strengthenPre: forall (inp: List[Nat], st: Nat) => pre1(inp, st) => pre2(inp, st),
+    hoareInner: HoareIO[A](pre2, prog, post1),
+    weakenPost: forall (v: A, rem: List[Nat], out: List[Nat], st: Nat) => post1(v, rem, out, st) => post2(v, rem, out, st)
+  ): HoareIO[A](pre1, prog, post2) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre1)
+    exact(weakenPost(
+      runIO[A](prog, inputs, initState).value,
+      runIO[A](prog, inputs, initState).remainingInputs,
+      runIO[A](prog, inputs, initState).outputs,
+      runIO[A](prog, inputs, initState).finalState,
+      hoareInner(inputs, initState, strengthenPre(inputs, initState, hPre1))
+    ))
+  }
+
+  theorem hoareBind[A, B](
+    pre: List[Nat] => Nat => Prop,
+    mid: A => List[Nat] => List[Nat] => Nat => Prop,
+    post: B => List[Nat] => List[Nat] => Nat => Prop,
+    prog: IO[A],
+    cont: A => IO[B],
+    hFirst: HoareIO[A](pre, prog, mid),
+    hSecond: forall (a: A, out1: List[Nat]) =>
+      HoareIO[B](
+        (rem1: List[Nat], st1: Nat) => mid(a, rem1, out1, st1),
+        cont(a),
+        (b: B, rem2: List[Nat], out2: List[Nat], st2: Nat) => post(b, rem2, out1 ++ out2, st2)
+      )
+  ): HoareIO[B](pre, bind[A, B](prog, cont), post) = by {
+    unfold(HoareIO)
+    intros(inputs, initState, hPre)
+    rewrite(runIOBind[A, B](prog, cont, inputs, initState))
+    have(hMid: mid(
+      runIO[A](prog, inputs, initState).value,
+      runIO[A](prog, inputs, initState).remainingInputs,
+      runIO[A](prog, inputs, initState).outputs,
+      runIO[A](prog, inputs, initState).finalState
+    )) {
+      exact(hFirst(inputs, initState, hPre))
+    }
+    exact(hSecond(
+      runIO[A](prog, inputs, initState).value,
+      runIO[A](prog, inputs, initState).outputs,
+      runIO[A](prog, inputs, initState).remainingInputs,
+      runIO[A](prog, inputs, initState).finalState,
+      hMid
+    ))
+  }
+}

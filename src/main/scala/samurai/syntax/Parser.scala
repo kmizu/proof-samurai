@@ -495,7 +495,7 @@ object Parser {
           advance()
           val right = parseArrow()
           SurfaceExpr.ArrowExpr(
-            List(ParamBinder("_", Some(left), left.span)),
+            List(ParamBinder("_", Some(left), left.span, isBareArrowLeft = true)),
             right,
             alwaysPi = false,
             left.span.merge(right.span)
@@ -828,6 +828,9 @@ object Parser {
         val tok = advance()
         SurfaceExpr.SortExpr(isProp = false, level = level, tok.span)
 
+      case TokenKind.Ident("do") if peek(1).kind == TokenKind.LBrace =>
+        parseDoBlock()
+
       case TokenKind.Ident(name) =>
         val tok = advance()
         SurfaceExpr.VarExpr(name, tok.span)
@@ -896,6 +899,94 @@ object Parser {
 
       case other =>
         fail("P012", s"Expected expression, found $other")
+    }
+
+    private sealed trait DoStep {
+      def span: Span
+    }
+    private object DoStep {
+      final case class Bind(name: String, typeAnn: Option[SurfaceExpr], action: SurfaceExpr, span: Span) extends DoStep
+      final case class LetVal(name: String, typeAnn: Option[SurfaceExpr], value: SurfaceExpr, span: Span) extends DoStep
+      final case class Action(expr: SurfaceExpr, span: Span) extends DoStep
+    }
+
+    /**
+     * Parse monadic `do { val x <- act; val y = pureExpr; sideEffect; result }` block
+     * and desugar cleanly into `bind` calls and `BlockExpr` local `val`s (0 kernel changes!).
+     */
+    private def parseDoBlock(): SurfaceExpr = {
+      val start = advance() // 'do'
+      expect(TokenKind.LBrace, "'{' after 'do'")
+      val steps = List.newBuilder[DoStep]
+      skipSemis()
+      while (current.kind != TokenKind.RBrace && current.kind != TokenKind.Eof) {
+        if (current.kind == TokenKind.KwVal) {
+          val valTok = advance()
+          val (rawName, _) =
+            if (current.kind == TokenKind.Underscore) {
+              val u = advance()
+              ("_", u.span)
+            } else expectIdent("variable name in 'do' block")
+          val typeAnn =
+            if (current.kind == TokenKind.Colon) {
+              advance()
+              Some(expr())
+            } else None
+          if (current.kind == TokenKind.LeftArrow) {
+            advance()
+            val action = expr()
+            steps += DoStep.Bind(rawName, typeAnn, action, valTok.span.merge(action.span))
+          } else {
+            expect(TokenKind.Eq, "'<-' or '=' after 'val' in 'do' block")
+            val rhs = expr()
+            steps += DoStep.LetVal(rawName, typeAnn, rhs, valTok.span.merge(rhs.span))
+          }
+        } else {
+          val e = expr()
+          steps += DoStep.Action(e, e.span)
+        }
+        skipSemis()
+      }
+      val end = expect(TokenKind.RBrace, "'}' closing 'do' block")
+      val stepList = steps.result()
+      if (stepList.isEmpty) {
+        fail("P020", "'do' block cannot be empty", start.span.merge(end.span))
+      }
+
+      def desugar(rem: List[DoStep], idx: Int): SurfaceExpr = rem match {
+        case List(DoStep.Action(finalExpr, _)) =>
+          finalExpr
+        case List(last) =>
+          fail("P021", "Last statement in 'do' block must be an expression (not a 'val' binding)", last.span)
+        case DoStep.LetVal(rawName, typeAnn, value, sp) :: rest =>
+          val binderName = if (rawName == "_") s"_doLet$idx" else rawName
+          val tailExpr = desugar(rest, idx + 1)
+          SurfaceExpr.BlockExpr(List(BlockStatement.LocalVal(binderName, typeAnn, value, sp)), tailExpr, sp.merge(tailExpr.span))
+        case DoStep.Bind(rawName, typeAnn, action, sp) :: rest =>
+          val binderName = if (rawName == "_") s"_doBind$idx" else rawName
+          val tailExpr = desugar(rest, idx + 1)
+          val contLam = SurfaceExpr.ArrowExpr(
+            List(ParamBinder(binderName, typeAnn, sp)),
+            tailExpr,
+            alwaysPi = false,
+            sp.merge(tailExpr.span)
+          )
+          SurfaceExpr.CallExpr(SurfaceExpr.VarExpr("bind", sp), List(action, contLam), sp.merge(tailExpr.span))
+        case DoStep.Action(action, sp) :: rest =>
+          val binderName = s"_doIgnored$idx"
+          val tailExpr = desugar(rest, idx + 1)
+          val contLam = SurfaceExpr.ArrowExpr(
+            List(ParamBinder(binderName, None, sp)),
+            tailExpr,
+            alwaysPi = false,
+            sp.merge(tailExpr.span)
+          )
+          SurfaceExpr.CallExpr(SurfaceExpr.VarExpr("bind", sp), List(action, contLam), sp.merge(tailExpr.span))
+        case Nil =>
+          fail("P020", "'do' block cannot be empty", start.span.merge(end.span))
+      }
+
+      desugar(stepList, 0)
     }
 
     private def parseBlockExpr(): SurfaceExpr = {

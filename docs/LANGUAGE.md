@@ -125,6 +125,11 @@ partial def collatzSteps(value: Nat): Nat = {
 | `h :: t`, `xs ++ ys`, `[1, 2, 3]`, `[]` | `List.Cons`, `append`, and list literals / list patterns |
 | `xs.length`, `pair.first` | UFCS method calls and `case class` field projections |
 | `0, 1, 2`, `true, false` | `Nat` and `Bool` literals |
+| `do { val x <- act; ... }` | Monadic `do`-notation desugared to `bind` (for `stdlib/IO.samurai` or any in-scope `bind`) |
+
+## Monadic `do { ... }` Notation
+
+Inside `do { ... }`, `val x <- action` desugars to `bind(action, x => rest)`, `val x = expr` creates a pure local binding, and a standalone expression statement `action` chains via `bind(action, _ => rest)`. Because `do` is contextual (only active before `{`), identifiers named `do` remain valid everywhere else. See [IO_VERIFICATION.md](IO_VERIFICATION.md) for verified IO programs, `HoareIO` invariants, and real-runtime extraction.
 
 ## Equational Reasoning (`calc { ... }`)
 ```scala

@@ -74,6 +74,7 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 - [言語リファレンス](docs/ja/LANGUAGE.md)
 - [タクティク・クックブック](docs/ja/TACTICS_COOKBOOK.md)
 - [検証済みコード抽出](docs/ja/EXTRACTION.md)
+- [IO・副作用プログラムの形式検証](docs/ja/IO_VERIFICATION.md)
 - [カーネル・型エラー解決ガイド](docs/ja/TROUBLESHOOTING.md)
 - [信頼カーネルのアーキテクチャ](docs/ja/KERNEL.md)
 - [AI エージェント連携ガイド](docs/ja/AI_AGENT_GUIDE.md)
@@ -90,6 +91,6 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 - `src/main/scala/samurai/extract/` — `Prop`・型消去 IR およびコード生成器（`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`）
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — 組み込み HTTP サーバと Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — 分岐対応 NDJSON 証明サーバ（`ProofSessionServer`）と複数行 REPL
-- `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`）
-- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`）
+- `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`, `IO`）
+- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `VerifiedIO`）
 - `docs/` — 英語・日本語（`docs/ja/`）ドキュメントおよび GitHub Pages サイト

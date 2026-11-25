@@ -91,8 +91,17 @@ class StdlibSuite extends FunSuite {
     }
   }
 
+  test("IO.samurai verifies 0-axiom Free Monad IO, higher-order induction, monad laws, and HoareIO") {
+    val env = checkStdlibFile("IO.samurai")
+    assertEquals(env.kernelEnv.allPartialDefs, Set.empty[String], "IO.samurai must be 100% total")
+    for (sym <- List("runIOBind", "ioLeftId", "ioRightId", "ioAssoc", "runIOPrintList", "runIOReadN", "hoarePure", "hoareBind", "hoareConseq")) {
+      assert(env.kernelEnv.defs.contains(sym), s"Missing IO theorem $sym")
+      assertEquals(env.kernelEnv.defs(sym).axiomsUsed, Set.empty[String])
+    }
+  }
+
   test("all examples/*.samurai verify 100% axiom-free") {
-    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai", "AdvancedRecursion.samurai")) {
+    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai", "AdvancedRecursion.samurai", "PracticalProving.samurai", "VerifiedIO.samurai")) {
       val path = Paths.get("examples", example)
       val source = java.nio.file.Files.readString(path)
       Elaborator.checkFile(path, ElabEnv(searchPaths = searchPaths)) match {

@@ -342,4 +342,159 @@ class ExtractionSuite extends FunSuite {
     assert(!mlCode.contains("insertionSortIsSorted"))
     assert(!mlCode.contains("natWf"))
   }
+
+  test("extracts VerifiedIO to all 5 targets and executes real-runtime IO interpreter on JVM") {
+    val env = Elaborator
+      .checkFile(Paths.get("examples/VerifiedIO.samurai"), ElabEnv(searchPaths = searchPaths))
+      .fold(d => fail(d.formatHuman()), identity)
+
+    val extracted = Erasure
+      .extract(
+        env,
+        Erasure.ExtractionOptions(moduleName = "ExtractedVerifiedIO", requireAxiomFree = true, requireTotal = true)
+      )
+      .fold(err => fail(err), identity)
+
+    assert(extracted.manifest.isAxiomFree)
+    assert(extracted.manifest.isTotal)
+    assert(extracted.manifest.erasedPropositions.contains("Le"))
+    assert(extracted.manifest.verifiedTheorems.contains("depositWithCapPreservesInvariant"))
+    assert(extracted.manifest.verifiedTheorems.contains("readSortAndPrintOutputIsVerified"))
+    assert(extracted.manifest.verifiedTheorems.contains("withdrawSafeSuccessSpec"))
+
+    val scalaCode = Scala3Emitter.emit(extracted)
+    val tsCode = TsEmitter.emit(extracted)
+    val jsCode = JsEmitter.emit(extracted)
+    val hsCode = HaskellEmitter.emit(extracted)
+    val mlCode = OCamlEmitter.emit(extracted)
+
+    // Complete erasure of all IO proof specifications (HoareIO, IOEquiv, Sorted, theorems) across all 5 targets
+    for ((lang, code) <- scala.List("Scala 3" -> scalaCode, "TS" -> tsCode, "JS" -> jsCode, "Haskell" -> hsCode, "OCaml" -> mlCode)) {
+      assert(!code.contains("HoareIO"), s"$lang must erase HoareIO")
+      assert(!code.contains("IOEquiv"), s"$lang must erase IOEquiv")
+      assert(!code.contains("def Sorted") && !code.contains("function Sorted") && !code.contains("Sorted ::"), s"$lang must erase Sorted")
+      assert(!code.contains("depositWithCapPreservesInvariant"), s"$lang must erase Hoare invariant theorem")
+      assert(!code.contains("readSortAndPrintOutputIsVerified"), s"$lang must erase IO sorting theorem")
+      assert(!code.contains("withdrawSafeSuccessSpec"), s"$lang must erase withdraw spec theorem")
+    }
+
+    assert(scalaCode.contains("enum IO[Result]"))
+    assert(scalaCode.contains("enum Eff[Req, Resp, Result]"))
+    assert(tsCode.contains("export function readSortAndPrint"))
+    assert(jsCode.contains("export function withdrawSafe"))
+    assert(hasBalancedParens(hsCode), s"Unbalanced parens in Haskell VerifiedIO output:\n$hsCode")
+    assert(hsCode.contains("data IO result\n  = IO_Pure result"), s"Missing Haskell IO ADT:\n$hsCode")
+    assert(hasBalancedParens(mlCode), s"Unbalanced parens in OCaml VerifiedIO output:\n$mlCode")
+    assert(mlCode.contains("let rec bind"), s"Missing OCaml bind:\n$mlCode")
+
+    // Compile extracted Scala 3 code + a tiny real-world IO runtime interpreter and run on JVM!
+    val driverCode =
+      s"""$scalaCode
+         |
+         |object RealIORunner {
+         |  import ExtractedVerifiedIO.*
+         |
+         |  def toNat(n: Int): Nat = if (n <= 0) Nat.Zero else Nat.Succ(toNat(n - 1))
+         |  def fromNat(n: Nat): Int = n match {
+         |    case Nat.Zero => 0
+         |    case Nat.Succ(p) => 1 + fromNat(p)
+         |  }
+         |  def fromBool(b: Bool): Boolean = b match {
+         |    case Bool.True => true
+         |    case Bool.False => false
+         |  }
+         |  def fromList(xs: List[Nat]): scala.List[Int] = xs match {
+         |    case List.Nil() => scala.Nil
+         |    case List.Cons(h, t) => fromNat(h) :: fromList(t)
+         |  }
+         |
+         |  /**
+         |   * Real-world imperative runtime interpreter for Proof Samurai's verified `IO[A]` effect tree.
+         |   * Connects pure verified programs to real input streams, output sinks, and mutable state.
+         |   */
+         |  def runRealIO[A](
+         |    prog: IO[A],
+         |    stdin: Iterator[Int],
+         |    stdout: scala.collection.mutable.ListBuffer[Int],
+         |    getStore: () => Int,
+         |    putStore: Int => scala.Unit
+         |  ): A = {
+         |    var cur: IO[A] = prog
+         |    while (true) {
+         |      cur match {
+         |        case IO.Pure(v) => return v
+         |        case IO.PrintNat(v, next) =>
+         |          stdout += fromNat(v)
+         |          cur = next
+         |        case IO.ReadNat(k) =>
+         |          val nextIn = if (stdin.hasNext) stdin.next() else 0
+         |          cur = k(toNat(nextIn))
+         |        case IO.GetState(k) =>
+         |          cur = k(toNat(getStore()))
+         |        case IO.PutState(s, next) =>
+         |          putStore(fromNat(s))
+         |          cur = next
+         |      }
+         |    }
+         |    throw new AssertionError("unreachable")
+         |  }
+         |
+         |  def main(args: Array[String]): scala.Unit = {
+         |    // 1. Interactive adder
+         |    val out1 = scala.collection.mutable.ListBuffer.empty[Int]
+         |    var st1 = 5
+         |    val sumRes = fromNat(runRealIO(readAndPrintSum, Iterator(10, 32, 99), out1, () => st1, s => st1 = s))
+         |
+         |    // 2. Bank account safe withdraw (success + rejection)
+         |    val out2 = scala.collection.mutable.ListBuffer.empty[Int]
+         |    var balance = 50
+         |    val w1 = fromBool(runRealIO(withdrawSafe(toNat(18)), Iterator.empty, out2, () => balance, s => balance = s))
+         |    val w2 = fromBool(runRealIO(withdrawSafe(toNat(40)), Iterator.empty, out2, () => balance, s => balance = s))
+         |
+         |    // 3. Capped deposit (accepted + rejected at cap=50)
+         |    val out3 = scala.collection.mutable.ListBuffer.empty[Int]
+         |    val d1 = fromBool(runRealIO(depositWithCap(toNat(50)), Iterator(10), out3, () => balance, s => balance = s))
+         |    val d2 = fromBool(runRealIO(depositWithCap(toNat(50)), Iterator(20), out3, () => balance, s => balance = s))
+         |
+         |    // 4. Verified IO sorting pipeline
+         |    val out4 = scala.collection.mutable.ListBuffer.empty[Int]
+         |    var st4 = 0
+         |    val sortedRes = fromList(runRealIO(readSortAndPrint(toNat(5)), Iterator(4, 1, 5, 2, 3), out4, () => st4, s => st4 = s))
+         |
+         |    println(
+         |      s"sum=$$sumRes/out1=$${out1.mkString(",")};w=$$w1,$$w2/out2=$${out2.mkString(",")};d=$$d1,$$d2/bal=$$balance/out3=$${out3.mkString(",")};sort=$${sortedRes.mkString(",")}/out4=$${out4.mkString(",")}"
+         |    )
+         |  }
+         |}
+         |""".stripMargin
+
+    val tempDir = Files.createTempDirectory("samurai-verified-io")
+    val srcFile = tempDir.resolve("ExtractedVerifiedIO.scala")
+    val outClasses = tempDir.resolve("classes")
+    Files.createDirectories(outClasses)
+    Files.writeString(srcFile, driverCode)
+
+    val testClasspath = System.getProperty("java.class.path")
+    val compileProc = new ProcessBuilder(
+      "java", "-cp", testClasspath, "dotty.tools.dotc.Main",
+      "-classpath", testClasspath,
+      "-d", outClasses.toString,
+      srcFile.toString
+    ).redirectErrorStream(true).start()
+    val compileOut = new String(compileProc.getInputStream.readAllBytes())
+    val compileCode = compileProc.waitFor()
+    assertEquals(compileCode, 0, s"Extracted VerifiedIO Scala 3 failed to compile!\nCode:\n$driverCode\nOutput:\n$compileOut")
+
+    val runCp = s"${outClasses.toString}${java.io.File.pathSeparator}$testClasspath"
+    val runProc = new ProcessBuilder("java", "-cp", runCp, "RealIORunner")
+      .redirectErrorStream(true)
+      .start()
+    val runOut = new String(runProc.getInputStream.readAllBytes()).trim
+    val runCode = runProc.waitFor()
+    assertEquals(runCode, 0, s"Extracted VerifiedIO JVM execution failed:\n$runOut")
+    assert(
+      runOut.contains("sum=42/out1=42;w=true,false/out2=1,0;d=true,false/bal=42/out3=42,42;sort=1,2,3,4,5/out4=1,2,3,4,5"),
+      s"Unexpected real-IO runtime output: $runOut"
+    )
+  }
 }

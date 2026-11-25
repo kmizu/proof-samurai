@@ -74,6 +74,7 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - [Language Reference](docs/LANGUAGE.md) / [言語リファレンス](docs/ja/LANGUAGE.md)
 - [Tactic Cookbook](docs/TACTICS_COOKBOOK.md) / [タクティク・クックブック](docs/ja/TACTICS_COOKBOOK.md)
 - [Verified Code Extraction](docs/EXTRACTION.md) / [検証済みコード抽出](docs/ja/EXTRACTION.md)
+- [Verifying Effectful & IO Programs](docs/IO_VERIFICATION.md) / [IO・副作用プログラムの形式検証](docs/ja/IO_VERIFICATION.md)
 - [Kernel & Type Error Guide](docs/TROUBLESHOOTING.md) / [カーネル・型エラー解決ガイド](docs/ja/TROUBLESHOOTING.md)
 - [Trusted Kernel Architecture](docs/KERNEL.md) / [信頼カーネルのアーキテクチャ](docs/ja/KERNEL.md)
 - [AI Agent Guide](docs/AI_AGENT_GUIDE.md) / [AI エージェント連携ガイド](docs/ja/AI_AGENT_GUIDE.md)
@@ -90,6 +91,6 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - `src/main/scala/samurai/extract/` — `Prop`/type erasure IR and code emitters (`Scala3Emitter`, `TsEmitter`, `JsEmitter`, `HaskellEmitter`, `OCamlEmitter`)
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — Embedded HTTP server and Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — Branching NDJSON proof server (`ProofSessionServer`) and multi-line REPL
-- `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`)
-- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`)
+- `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`, `IO`)
+- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `VerifiedIO`)
 - `docs/` — English and Japanese (`docs/ja/`) documentation and GitHub Pages site

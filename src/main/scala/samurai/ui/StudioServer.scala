@@ -307,10 +307,11 @@ object StudioServer {
               ("language", "03 言語リファレンス", "docs/ja/LANGUAGE.md"),
               ("tactics", "04 タクティク・クックブック", "docs/ja/TACTICS_COOKBOOK.md"),
               ("extraction", "05 検証済みコード抽出", "docs/ja/EXTRACTION.md"),
-              ("troubleshooting", "06 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
-              ("kernel", "07 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
-              ("ai-guide", "08 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "09 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
+              ("io-verification", "06 IO・副作用プログラムの形式検証", "docs/ja/IO_VERIFICATION.md"),
+              ("troubleshooting", "07 カーネル・型エラー解決ガイド", "docs/ja/TROUBLESHOOTING.md"),
+              ("kernel", "08 信頼カーネルのアーキテクチャ", "docs/ja/KERNEL.md"),
+              ("ai-guide", "09 AI エージェント連携ガイド", "docs/ja/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "10 JSON-RPC プロトコル仕様", "docs/ja/AI_PROTOCOL.md")
             )
           } else {
             List(
@@ -319,10 +320,11 @@ object StudioServer {
               ("language", "03 Language Reference", "docs/LANGUAGE.md"),
               ("tactics", "04 Tactic Cookbook", "docs/TACTICS_COOKBOOK.md"),
               ("extraction", "05 Verified Code Extraction", "docs/EXTRACTION.md"),
-              ("troubleshooting", "06 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
-              ("kernel", "07 Trusted Kernel Architecture", "docs/KERNEL.md"),
-              ("ai-guide", "08 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
-              ("ai-protocol", "09 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
+              ("io-verification", "06 Verifying Effectful & IO Programs", "docs/IO_VERIFICATION.md"),
+              ("troubleshooting", "07 Kernel & Type Error Guide", "docs/TROUBLESHOOTING.md"),
+              ("kernel", "08 Trusted Kernel Architecture", "docs/KERNEL.md"),
+              ("ai-guide", "09 AI Agent Guide", "docs/AI_AGENT_GUIDE.md"),
+              ("ai-protocol", "10 JSON-RPC Protocol Reference", "docs/AI_PROTOCOL.md")
             )
           }
         val loaded = docFiles.flatMap { case (id, title, relPath) =>
@@ -359,10 +361,12 @@ object StudioServer {
     val candidates = List(
       CuratedItem("showcase", "Showcase: calc, arith, Queue & Sort", "Examples", "Tour of list literals, calc blocks, one-word arith, and verified Queue.", Paths.get("examples/Showcase.samurai")),
       CuratedItem("practical-proving", "Practical Proving: omega, cc, tauto & <;>", "Examples", "Linear arithmetic (omega), congruence closure (cc), intuitionistic tauto, and combinators.", Paths.get("examples/PracticalProving.samurai")),
+      CuratedItem("verified-io", "Verified IO: do-notation, HoareIO & Sorting Pipeline", "Examples", "Zero-axiom Free Monad IO, balance conservation, Hoare cap invariant, and verified IO sorting pipeline.", Paths.get("examples/VerifiedIO.samurai")),
       CuratedItem("advanced-recursion", "Mutual, Well-Founded (div/gcd/quickSort) & partial def", "Examples", "Mutual structural recursion, fuel-free termination_by, and sound isolated partial def.", Paths.get("examples/AdvancedRecursion.samurai")),
       CuratedItem("hello", "Hello Proof (Gentle Intro)", "Examples", "Your first inductive proofs, automation, and #eval.", Paths.get("examples/HelloProof.samurai")),
       CuratedItem("verified-sort", "Verified Insertion Sort", "Examples", "Running insertion sort with full sortedness & permutation proofs.", Paths.get("examples/VerifiedSort.samurai")),
       CuratedItem("safe-vec", "Safe Length-Indexed Vectors", "Examples", "Total vecHead without Option or null — unreachable Nil discharged.", Paths.get("examples/SafeVec.samurai")),
+      CuratedItem("stdlib-io", "stdlib/IO.samurai", "Stdlib", "0-axiom Free Monad IO & Eff trees, runIO trace semantics, monad laws, and HoareIO.", Paths.get("stdlib/IO.samurai")),
       CuratedItem("stdlib-wellfounded", "stdlib/WellFounded.samurai", "Stdlib", "0-axiom Acc, natWf, strong induction, divNat, modNat, gcd, and quickSort.", Paths.get("stdlib/WellFounded.samurai")),
       CuratedItem("stdlib-sorting", "stdlib/Sorting.samurai", "Stdlib", "Full insertion sort correctness (Sorted + count permutation + length).", Paths.get("stdlib/Sorting.samurai")),
       CuratedItem("stdlib-queue", "stdlib/Queue.samurai", "Stdlib", "Verified amortized two-stack functional Queue.", Paths.get("stdlib/Queue.samurai")),

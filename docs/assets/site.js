@@ -5,10 +5,11 @@
     { num: "03", file: "LANGUAGE.md", group: "manual", title: { en: "Language Reference", ja: "言語リファレンス" }, desc: { en: "Scala 3 brace syntax, enum, case class, mutual, termination_by, partial def, calc, and tactics.", ja: "Scala 3 ブレース構文、enum、case class、mutual、termination_by、partial def、calc、タクティク一覧。" } },
     { num: "04", file: "TACTICS_COOKBOOK.md", group: "manual", title: { en: "Tactic Cookbook", ja: "タクティク・クックブック" }, desc: { en: "Tactic recipes organized by goal shape, programming equivalents, rewriting, cases, and induction.", ja: "ゴールの形・通常コード対応から引くタクティク集、書き換え、ケース分割、帰納法。" } },
     { num: "05", file: "EXTRACTION.md", group: "manual", title: { en: "Verified Code Extraction", ja: "検証済みコード抽出" }, desc: { en: "Prop erasure rules, Scala 3 / TypeScript / JavaScript / Haskell / OCaml output, and --strict / --total gates.", ja: "Prop 消去規則、Scala 3 / TypeScript / JavaScript / Haskell / OCaml 出力、--strict / --total 検証ゲート。" } },
-    { num: "06", file: "TROUBLESHOOTING.md", group: "manual", title: { en: "Kernel & Type Error Guide", ja: "カーネル・型エラー解決ガイド" }, desc: { en: "Causes and fixes for K005, K006, K020, K025, K026, K030, K031, T010, and T015.", ja: "K005 / K006 / K020 / K025 / K026 / K030 / K031 / T010 / T015 の原因と修正例。" } },
-    { num: "07", file: "KERNEL.md", group: "internals", title: { en: "Trusted Kernel Architecture", ja: "信頼カーネルのアーキテクチャ" }, desc: { en: "Universe stratification, strict positivity, termination, and subsingleton elimination.", ja: "宇宙階層、厳密正性、停止性検査、subsingleton 除去、公理追跡。" } },
-    { num: "08", file: "AI_AGENT_GUIDE.md", group: "internals", title: { en: "AI Agent Guide", ja: "AI エージェント連携ガイド" }, desc: { en: "Using the NDJSON server for LLM proof synthesis, MCTS, and CLI verification.", ja: "NDJSON サーバによる LLM 証明合成、木探索、CLI 自動検証ワークフロー。" } },
-    { num: "09", file: "AI_PROTOCOL.md", group: "internals", title: { en: "JSON-RPC Protocol Reference", ja: "JSON-RPC プロトコル仕様" }, desc: { en: "Method reference for proveGoal, step, batchStep, inspectHoles, and extract.", ja: "proveGoal / step / batchStep / inspectHoles / extract の仕様一覧。" } }
+    { num: "06", file: "IO_VERIFICATION.md", group: "manual", title: { en: "Verifying Effectful & IO Programs", ja: "IO・副作用プログラムの形式検証" }, desc: { en: "Zero-axiom Free Monad IO/Eff trees, do-notation, trace semantics, HoareIO invariants, and native runtime runners.", ja: "公理 0 の Free モナド IO/Eff 木、do 構文、トレース意味論、HoareIO 不変条件、各言語の実ランタイム接続。" } },
+    { num: "07", file: "TROUBLESHOOTING.md", group: "manual", title: { en: "Kernel & Type Error Guide", ja: "カーネル・型エラー解決ガイド" }, desc: { en: "Causes and fixes for K005, K006, K020, K025, K026, K030, K031, T010, and T015.", ja: "K005 / K006 / K020 / K025 / K026 / K030 / K031 / T010 / T015 の原因と修正例。" } },
+    { num: "08", file: "KERNEL.md", group: "internals", title: { en: "Trusted Kernel Architecture", ja: "信頼カーネルのアーキテクチャ" }, desc: { en: "Universe stratification, strict positivity, termination, and subsingleton elimination.", ja: "宇宙階層、厳密正性、停止性検査、subsingleton 除去、公理追跡。" } },
+    { num: "09", file: "AI_AGENT_GUIDE.md", group: "internals", title: { en: "AI Agent Guide", ja: "AI エージェント連携ガイド" }, desc: { en: "Using the NDJSON server for LLM proof synthesis, MCTS, and CLI verification.", ja: "NDJSON サーバによる LLM 証明合成、木探索、CLI 自動検証ワークフロー。" } },
+    { num: "10", file: "AI_PROTOCOL.md", group: "internals", title: { en: "JSON-RPC Protocol Reference", ja: "JSON-RPC プロトコル仕様" }, desc: { en: "Method reference for proveGoal, step, batchStep, inspectHoles, and extract.", ja: "proveGoal / step / batchStep / inspectHoles / extract の仕様一覧。" } }
   ];
 
   const STDLIB_MODULES = [
@@ -20,7 +21,8 @@
     { mod: "stdlib/Option.samurai", en: "Verified Option functor and monad laws", ja: "Option 型のファンクタ則・モナド則の証明" },
     { mod: "stdlib/Queue.samurai", en: "Amortized two-stack functional queue with FIFO specification proofs", ja: "2 スタック関数型キューと FIFO 仕様の正当性証明" },
     { mod: "stdlib/Sorting.samurai", en: "Insertion sort with Sorted, element-count permutation, and length proofs", ja: "挿入ソートの整列性（Sorted）・多重集合置換・長さ保存の完全証明" },
-    { mod: "stdlib/WellFounded.samurai", en: "0-axiom Acc, natWf, strong induction, divNat, modNat, gcd, and quickSort", ja: "公理 0 の Acc・natWf・完全帰納法、整礎再帰の divNat / modNat / gcd / quickSort" }
+    { mod: "stdlib/WellFounded.samurai", en: "0-axiom Acc, natWf, strong induction, divNat, modNat, gcd, and quickSort", ja: "公理 0 の Acc・natWf・完全帰納法、整礎再帰の divNat / modNat / gcd / quickSort" },
+    { mod: "stdlib/IO.samurai", en: "0-axiom Free Monad IO & Eff trees, runIO trace semantics, monad laws, and HoareIO", ja: "公理 0 の Free モナド IO / Eff 木、runIO トレース意味論、モナド則、HoareIO" }
   ];
 
   const INDEX_ITEMS = [

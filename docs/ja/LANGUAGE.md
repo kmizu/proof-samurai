@@ -134,6 +134,11 @@ partial def collatzSteps(value: Nat): Nat = {
 | `h :: t`, `xs ++ ys`, `[1, 2, 3]`, `[]` | `List.Cons`、`append`、リストリテラルおよびリストパターン |
 | `xs.length`, `pair.first` | UFCS 呼び出しおよび `case class` フィールド参照 |
 | `0, 1, 2`, `true, false` | `Nat` リテラルおよび `Bool` リテラル |
+| `do { val x <- act; ... }` | `bind` へ脱糖されるモナディック `do` 構文（`stdlib/IO.samurai` 等） |
+
+## モナディックな `do { ... }` 構文
+
+`do { ... }` の内部では、`val x <- action` が `bind(action, x => rest)` へ、`val x = expr` が純粋なローカル束縛へ、単独の式文 `action` が `bind(action, _ => rest)` へ脱糖されます。`do` は `{` の直前でのみ有効な文脈キーワードのため、それ以外の場所では識別子 `do` もそのまま使えます。検証済み IO プログラム・`HoareIO` 不変条件・実ランタイム抽出の詳細は [IO_VERIFICATION.md](IO_VERIFICATION.md) を参照してください。
 
 ## 等式推論（`calc { ... }`）
 

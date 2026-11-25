@@ -121,6 +121,7 @@ object Lexer {
           else if (matches("<;>")) { advance(); advance(); advance(); Right(TokenKind.SeqAll) }
           else if (matches("=>")) { advance(); advance(); Right(TokenKind.FatArrow) }
           else if (matches("->")) { advance(); advance(); Right(TokenKind.ThinArrow) }
+          else if (matches("<-")) { advance(); advance(); Right(TokenKind.LeftArrow) }
           else if (matches("==")) { advance(); advance(); Right(TokenKind.EqEq) }
           else if (matches("!=")) { advance(); advance(); Right(TokenKind.BangEq) }
           else if (matches("<=")) { advance(); advance(); Right(TokenKind.LtEq) }

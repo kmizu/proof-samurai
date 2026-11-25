@@ -1,0 +1,240 @@
+module VerifiedIO {
+  import Prelude.*
+  import Nat.*
+  import List.*
+  import Sorting.*
+  import IO.*
+
+  // =========================================================================
+  // 1. Verified Interactive Adder (using `do { ... }` monadic IO syntax)
+  // =========================================================================
+
+  def readAndPrintSum: IO[Nat] = {
+    do {
+      val first <- readNat
+      val second <- readNat
+      val total = first + second
+      printNat(total)
+      pure[Nat](total)
+    }
+  }
+
+  theorem readAndPrintSumSpec(first: Nat, second: Nat, rest: List[Nat], initState: Nat):
+    runIO[Nat](readAndPrintSum, first :: second :: rest, initState) ===
+      IOResult[Nat](first + second, rest, [first + second], initState) = by {
+    refl
+  }
+
+  // =========================================================================
+  // 2. Verified Safe Bank Account Service (Conservation & Cap Invariants!)
+  // =========================================================================
+
+  // Withdraws `amount` only if current balance >= amount; prints 1 on success, 0 on rejection.
+  def withdrawSafe(amount: Nat): IO[Bool] = {
+    do {
+      val balance <- getState
+      if (amount <= balance) {
+        do {
+          putState(balance - amount)
+          printNat(1)
+          pure[Bool](true)
+        }
+      } else {
+        do {
+          printNat(0)
+          pure[Bool](false)
+        }
+      }
+    }
+  }
+
+  // Helper lemma: if `amount <= balance`, then `(balance - amount) + amount === balance` (exact conservation!)
+  theorem subAddExact(balance: Nat): forall (amount: Nat) => (ble(amount, balance) === true) => ((balance - amount) + amount === balance) = by {
+    induction(balance) {
+      case Zero => {
+        intro(amount)
+        cases(amount) {
+          case Zero => { intro(_); refl }
+          case Succ(p) => { intro(h); discriminate(h) }
+        }
+      }
+      case Succ(predBal, ih) => {
+        intro(amount)
+        cases(amount) {
+          case Zero => {
+            intro(_)
+            simp
+          }
+          case Succ(predAmt) => {
+            intro(h)
+            simp
+            congr
+            exact(ih(predAmt, h))
+          }
+        }
+      }
+    }
+  }
+
+  // Theorem 2a: Successful withdrawal satisfies exact balance conservation (`finalBalance + amount === initBalance`)!
+  theorem withdrawSafeSuccessSpec(
+    amount: Nat,
+    inputs: List[Nat],
+    initBalance: Nat,
+    hEnough: ble(amount, initBalance) === true
+  ):
+    (runIO[Bool](withdrawSafe(amount), inputs, initBalance).value === true) /\
+    (runIO[Bool](withdrawSafe(amount), inputs, initBalance).outputs === [1]) /\
+    (runIO[Bool](withdrawSafe(amount), inputs, initBalance).finalState + amount === initBalance) = by {
+    unfold(withdrawSafe)
+    simp
+    rewrite(hEnough)
+    simp
+    split
+    refl
+    split
+    refl
+    exact(subAddExact(initBalance, amount, hEnough))
+  }
+
+  // Theorem 2b: Rejected withdrawal never mutates the balance and prints rejection code 0!
+  theorem withdrawSafeRejectSpec(
+    amount: Nat,
+    inputs: List[Nat],
+    initBalance: Nat,
+    hShort: ble(amount, initBalance) === false
+  ):
+    runIO[Bool](withdrawSafe(amount), inputs, initBalance) ===
+      IOResult[Bool](false, inputs, [0], initBalance) = by {
+    unfold(withdrawSafe)
+    simp
+    rewrite(hShort)
+    refl
+  }
+
+  // Reads a deposit amount from stdin and applies it only if `balance + amount <= cap`.
+  def depositWithCap(cap: Nat): IO[Bool] = {
+    do {
+      val amount <- readNat
+      val balance <- getState
+      if (balance + amount <= cap) {
+        do {
+          putState(balance + amount)
+          printNat(balance + amount)
+          pure[Bool](true)
+        }
+      } else {
+        do {
+          printNat(balance)
+          pure[Bool](false)
+        }
+      }
+    }
+  }
+
+  // Theorem 2c (Hoare Safety Invariant): If `initBalance <= cap`, then for EVERY user input stream,
+  // `depositWithCap(cap)` preserves `finalBalance <= cap`!
+  theorem depositWithCapPreservesInvariant(cap: Nat):
+    HoareIO[Bool](
+      (inputs: List[Nat], bal: Nat) => Le(bal, cap),
+      depositWithCap(cap),
+      (ok: Bool, rem: List[Nat], out: List[Nat], finalBal: Nat) => Le(finalBal, cap)
+    ) = by {
+    unfold(HoareIO)
+    intros(inputs, initBal, hInv)
+    cases(inputs) {
+      case Nil => {
+        unfold(depositWithCap)
+        simp
+        by_cases(ble(initBal, cap), cmp) <;> { simp; omega }
+      }
+      case Cons(amt, rest) => {
+        unfold(depositWithCap)
+        simp
+        by_cases(ble(initBal + amt, cap), cmp) <;> { simp; omega }
+      }
+    }
+  }
+
+  // =========================================================================
+  // 3. Verified End-to-End IO Sorting Pipeline (`readSortAndPrint`)
+  // =========================================================================
+
+  def readSortAndPrint(count: Nat): IO[List[Nat]] = {
+    do {
+      val items <- readN(count)
+      val sorted = insertionSort(items)
+      printList(sorted)
+      pure[List[Nat]](sorted)
+    }
+  }
+
+  // Proves that the ACTUAL OUTPUT STREAM printed by `readSortAndPrint` is
+  // sorted AND a multiset permutation of the input stream, for ALL input lists!
+  theorem readSortAndPrintTrace(items: List[Nat], rest: List[Nat], initState: Nat):
+    runIO[List[Nat]](readSortAndPrint(length(items)), items ++ rest, initState) ===
+      IOResult[List[Nat]](insertionSort(items), rest, insertionSort(items), initState) = by {
+    unfold(readSortAndPrint)
+    rewrite(runIOBind[List[Nat], List[Nat]](
+      readN(length(items)),
+      (xs: List[Nat]) =>
+        bind[Unit, List[Nat]](printList(insertionSort(xs)), (_: Unit) => pure[List[Nat]](insertionSort(xs))),
+      items ++ rest,
+      initState
+    ))
+    rewrite(runIOReadN(items, rest, initState))
+    simp
+    rewrite(runIOBind[Unit, List[Nat]](
+      printList(insertionSort(items)),
+      (_: Unit) => pure[List[Nat]](insertionSort(items)),
+      rest,
+      initState
+    ))
+    rewrite(runIOPrintList(insertionSort(items), rest, initState))
+    simp
+  }
+
+  theorem readSortAndPrintOutputIsVerified(items: List[Nat], rest: List[Nat], initState: Nat):
+    IsSortedPermutation(items, runIO[List[Nat]](readSortAndPrint(length(items)), items ++ rest, initState).outputs) = by {
+    rewrite(readSortAndPrintTrace(items, rest, initState))
+    unfold(IsSortedPermutation)
+    split
+    exact(insertionSortIsSorted(items))
+    intro(target)
+    exact(countInsertionSort(target, items))
+  }
+
+  // =========================================================================
+  // 4. Custom Algebraic Effect (`Eff`) — Verified Counter/KV Protocol
+  // =========================================================================
+
+  enum CounterReq: Type {
+    case Get
+    case Add(delta: Nat)
+  }
+
+  def counterStep(req: CounterReq)(state: Nat): Pair[Nat, Nat] = {
+    req match {
+      case CounterReq.Get => Pair[Nat, Nat](state, state)
+      case CounterReq.Add(delta) => Pair[Nat, Nat](state + delta, state + delta)
+    }
+  }
+
+  def incrementTwice(first: Nat, second: Nat): Eff[CounterReq, Nat, Nat] = {
+    effBind[CounterReq, Nat, Nat, Nat](
+      perform[CounterReq, Nat](CounterReq.Add(first)),
+      (_: Nat) => perform[CounterReq, Nat](CounterReq.Add(second))
+    )
+  }
+
+  theorem incrementTwiceSpec(first: Nat, second: Nat, initState: Nat):
+    handleEff[CounterReq, Nat, Nat, Nat](incrementTwice(first, second), counterStep, initState) ===
+      Pair[Nat, Nat]((initState + first) + second, (initState + first) + second) = by {
+    refl
+  }
+
+  #eval runIO[Nat](readAndPrintSum, [10, 32, 99], 5)
+  #eval runIO[List[Nat]](readSortAndPrint(4), [4, 1, 3, 2, 99], 0)
+  #axioms depositWithCapPreservesInvariant
+  #axioms readSortAndPrintOutputIsVerified
+}

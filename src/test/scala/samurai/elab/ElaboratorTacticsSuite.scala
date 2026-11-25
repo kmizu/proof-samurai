@@ -477,4 +477,72 @@ class ElaboratorTacticsSuite extends FunSuite {
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
   }
+
+  test("do-notation, higher-order structural induction, and explicit wildcard lambdas verify axiom-free") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |import List.*
+        |import IO.*
+        |
+        |// `do` remains usable as a normal identifier outside `do { ... }`
+        |def contextualDoIdent(do: Nat): Nat = do + 1
+        |
+        |// Explicit wildcard `(_: Nat)` must NOT shadow the type `Nat` in the lambda body
+        |def wildcardDoesNotShadowType(f: Nat => Nat): Nat => Nat = {
+        |  (_: Nat) => f(0)
+        |}
+        |
+        |// Custom higher-order inductive (tree with function-valued continuation)
+        |enum Script: Type {
+        |  case Stop(v: Nat)
+        |  case Ask(k: Nat => Script)
+        |}
+        |
+        |def evalScript(s: Script, input: Nat): Nat = {
+        |  s match {
+        |    case Script.Stop(v) => v
+        |    case Script.Ask(k) => evalScript(k(input), input)
+        |  }
+        |}
+        |
+        |def mapScript(s: Script, f: Nat => Nat): Script = {
+        |  s match {
+        |    case Script.Stop(v) => Script.Stop(f(v))
+        |    case Script.Ask(k) => Script.Ask((n: Nat) => mapScript(k(n), f))
+        |  }
+        |}
+        |
+        |// Higher-order structural induction generates `ih: forall (n: Nat) => ...` for `Ask(k: Nat => Script)`
+        |theorem evalMapScript(s: Script, f: Nat => Nat, input: Nat):
+        |  evalScript(mapScript(s, f), input) === f(evalScript(s, input)) = by {
+        |  induction(s) {
+        |    case Stop(v) => { refl }
+        |    case Ask(k, ih) => {
+        |      exact(ih(input))
+        |    }
+        |  }
+        |}
+        |
+        |// Monadic `do { ... }` syntax with `val x <- ...`, `val y = ...`, and side-effect statements
+        |def echoPlusOne: IO[Nat] = {
+        |  do {
+        |    val x <- readNat
+        |    val y = x + 1
+        |    printNat(y)
+        |    putState(y)
+        |    pure[Nat](y)
+        |  }
+        |}
+        |
+        |theorem echoPlusOneSpec(n: Nat, rest: List[Nat], st: Nat):
+        |  runIO[Nat](echoPlusOne, n :: rest, st) === IOResult[Nat](n + 1, rest, [n + 1], n + 1) = by {
+        |  refl
+        |}
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+  }
 }

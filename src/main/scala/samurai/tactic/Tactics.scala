@@ -1212,8 +1212,24 @@ object Tactics {
           // `recFieldPos` is at index `(numFields - 1 - recFieldPos) + ihOrder`
           val fixVar = Term.Var(1 + numFields + ihOrder)
           val fieldVar = Term.Var((numFields - 1 - recFieldPos) + ihOrder)
-          val ihVal = Term.App(fixVar, fieldVar)
-          val ihTy = Term.subst(Term.shift(propBody, 2 + numFields + ihOrder, 1), 0, fieldVar)
+
+          // Support BOTH direct recursive fields (`next: IO[A]`) AND higher-order recursive fields
+          // (`cont: Nat => IO[A]`), synthesizing `ih: forall (x: Nat) => P(cont(x))`!
+          val fieldTypeInBranch = Term.shift(instFields(recFieldPos).ty, (numFields - recFieldPos) + ihOrder)
+          val argBinders = peelHigherOrderPiBinders(fieldTypeInBranch, indName)
+          val m = argBinders.length
+          val (ihTy, ihVal) =
+            if (m == 0) {
+              val v = Term.App(fixVar, fieldVar)
+              val t = Term.subst(Term.shift(propBody, 2 + numFields + ihOrder, 1), 0, fieldVar)
+              (t, v)
+            } else {
+              val argVars = (0 until m).toList.map(k => Term.Var(m - 1 - k))
+              val appliedField = Term.apps(Term.shift(fieldVar, m), argVars)
+              val bodyVal = Term.App(Term.shift(fixVar, m), appliedField)
+              val bodyTy = Term.subst(Term.shift(propBody, 2 + numFields + ihOrder + m, 1), 0, appliedField)
+              (Term.pis(argBinders, bodyTy), Term.lams(argBinders, bodyVal))
+            }
           ihDefs += ((ihName, ihTy, ihVal))
           branchCtx = branchCtx.push(ihName, ihTy, Some(ihVal))
         }
@@ -1499,9 +1515,18 @@ object Tactics {
     }
   }
 
-  private def isRecursiveIndField(fieldTy: Term, indName: String): Boolean = {
-    val (head, _) = Term.splitApps(fieldTy)
-    head == Term.Ind(indName)
+  private def isRecursiveIndField(fieldTy: Term, indName: String): Boolean = fieldTy match {
+    case Term.Pi(_, _, codomain) => isRecursiveIndField(codomain, indName)
+    case other =>
+      val (head, _) = Term.splitApps(other)
+      head == Term.Ind(indName)
+  }
+
+  private def peelHigherOrderPiBinders(fieldTy: Term, indName: String): List[Binder] = fieldTy match {
+    case Term.Pi(name, domain, codomain) if isRecursiveIndField(codomain, indName) =>
+      val cleanName = if (name == "_" || name.isEmpty) "x" else name
+      Binder(cleanName, domain) :: peelHigherOrderPiBinders(codomain, indName)
+    case _ => Nil
   }
 
   private def replaceVarInTerm(term: Term, targetIdx: Int, replacement: Term): Term = term match {

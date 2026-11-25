@@ -50,18 +50,18 @@ class StudioServerSuite extends FunSuite {
       val docsEnJson = Json.parse(httpGet(s"${server.url}/api/docs").body()).toOption.get
       assertEquals(docsEnJson.field("ok"), Some(Json.Bool(true)))
       assertEquals(docsEnJson.field("lang"), Some(Json.Str("en")))
-      assert(docsEnJson.field("docs").flatMap(_.asArr).exists(_.length == 9))
+      assert(docsEnJson.field("docs").flatMap(_.asArr).exists(_.length == 10))
       assert(
         docsEnJson
           .field("docs")
           .flatMap(_.asArr)
-          .exists(_.exists(_.field("id") == Some(Json.Str("proofs-for-programmers"))))
+          .exists(_.exists(_.field("id") == Some(Json.Str("io-verification"))))
       )
 
       val docsJaJson = Json.parse(httpGet(s"${server.url}/api/docs?lang=ja").body()).toOption.get
       assertEquals(docsJaJson.field("ok"), Some(Json.Bool(true)))
       assertEquals(docsJaJson.field("lang"), Some(Json.Str("ja")))
-      assert(docsJaJson.field("docs").flatMap(_.asArr).exists(_.length == 9))
+      assert(docsJaJson.field("docs").flatMap(_.asArr).exists(_.length == 10))
       assert(
         docsJaJson
           .field("docs")
