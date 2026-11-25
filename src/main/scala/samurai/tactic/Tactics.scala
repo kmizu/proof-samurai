@@ -36,6 +36,76 @@ object Tactics {
     }
   }
 
+  /**
+   * Term-mode one-word automatic proof expression `prove`.
+   * Runs a deterministic cascade of 0-axiom proof-producing tactics and returns
+   * a kernel-verifiable core `Term` without requiring a `by { ... }` block.
+   */
+  def tryAutoProve(
+    env: ElabEnv,
+    localCtx: LocalCtx,
+    targetType: Term,
+    span: Span
+  ): Either[Diagnostic, (Term, ElabEnv)] = boundary {
+    val initState = ProofState.initial(localCtx, targetType, label = "prove")
+
+    def trySequence(stmts: List[TacticStmt]): Option[(Term, ElabEnv)] = {
+      runScript(env, initState, stmts) match {
+        case Right((nextEnv, finalState)) if finalState.isSolved =>
+          finalState.buildProofTerm.toOption.map(proof => (proof, nextEnv))
+        case _ => None
+      }
+    }
+
+    val directSolvers: List[TacticStmt] = List(
+      TacticStmt.Refl(span),
+      TacticStmt.Assumption(span),
+      TacticStmt.Contradiction(span),
+      TacticStmt.Discriminate(None, span),
+      TacticStmt.Trivial(span),
+      TacticStmt.Arith(span),
+      TacticStmt.Omega(span),
+      TacticStmt.CongruenceClosure(span),
+      TacticStmt.Tauto(span),
+      TacticStmt.Decide(span)
+    )
+
+    for (solver <- directSolvers) {
+      trySequence(List(solver)).foreach(res => break(Right(res)))
+    }
+
+    // Try normalizing & rewriting with local equalities (`simp(*)`) and @simp lemmas first
+    val simpAll = TacticStmt.Simp(Nil, includeLocalHyps = true, target = None, span)
+    step(env, initState, simpAll) match {
+      case Right((simpEnv, simpState)) =>
+        if (simpState.isSolved) {
+          simpState.buildProofTerm.toOption.foreach(proof => break(Right((proof, simpEnv))))
+        } else {
+          for (solver <- directSolvers) {
+            step(simpEnv, simpState, solver) match {
+              case Right((nextEnv, finalState)) if finalState.isSolved =>
+                finalState.buildProofTerm.toOption.foreach(proof => break(Right((proof, nextEnv))))
+              case _ => ()
+            }
+          }
+        }
+      case Left(_) => ()
+    }
+
+    // Final fallback: bounded `auto` search
+    trySequence(List(TacticStmt.Auto(None, span))).foreach(res => break(Right(res)))
+
+    val goalStr = initState.openGoals.head.formatHuman(env.kernelEnv)
+    Left(
+      Diagnostic(
+        Diagnostic.Severity.Error,
+        "E057",
+        s"'prove' could not automatically prove goal:\n$goalStr",
+        span
+      )
+    )
+  }
+
   def step(
     env: ElabEnv,
     state: ProofState,

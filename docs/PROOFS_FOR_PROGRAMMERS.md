@@ -171,3 +171,47 @@ Not every function in an application needs a proof. Proof Samurai separates thre
 | `partial def` | Unbounded loops, unknown termination, boundary code | No (type & exhaustiveness checked) | No (`K031` isolation) | Normal functions (listed in manifest) |
 
 A pragmatic architecture verifies core invariants and algorithms with total `def` / `termination_by`, and isolates unbounded or boundary computations in `partial def` or the extracted host language.
+
+---
+
+## 5. Writing Short Proofs Without Tactics (`TacticFreeProofs.samurai`)
+
+You do not have to write `by { ... }` tactic scripts at all. Proof Samurai supports a concise **tactic-free term mode** built on five zero-axiom conveniences (every example below comes verbatim from `examples/TacticFreeProofs.samurai`):
+
+- **`refl`**: infers `Eq.Refl[A, lhs]` from the expected equality type.
+- **`sym(eq)` / `trans(eq1, eq2)` / `cong(fn, eq)`**: type-inferred equality combinators (`cong` even accepts bare constructors like `Nat.Succ` and unannotated lambdas like `k => h + k`).
+- **Expression-based `calc`**: write `=== rhs using proofExpr`, or omit `using` when a step holds by computation (`refl`).
+- **Flow-sensitive `if` in proofs**: `if (cond) { ... } else { ... }` automatically injects `cond === true` / `cond === false` into each branch via a 0-axiom `Eq.Refl` motive.
+- **`prove`**: a one-word 0-axiom automatic proof expression that runs the kernel-verified solvers (`refl`, `arith`, `omega`, `cc`, `tauto`, `simp(*)`, `decide`, `auto`) without leaving expression syntax.
+
+```scala
+// Structural induction in 4 lines — zero tactics!
+theorem addZeroRightDirect(n: Nat): n + 0 === n = {
+  n match {
+    case Nat.Zero       => refl
+    case Nat.Succ(pred) => cong(Nat.Succ, addZeroRightDirect(pred))
+  }
+}
+
+// List induction with expression-based `calc`
+theorem totalOfAppend(xs: List[Nat], ys: List[Nat]):
+  total(xs ++ ys) === total(xs) + total(ys) = {
+  xs match {
+    case []     => refl
+    case h :: t => calc {
+      h + total(t ++ ys)
+      === h + (total(t) + total(ys)) using cong(k => h + k, totalOfAppend(t, ys))
+      === (h + total(t)) + total(ys) using prove
+    }
+  }
+}
+
+// Flow-sensitive `if` + `prove` — 1 line!
+theorem clampStaysBelowCap(x: Nat, cap: Nat): Le(clamp(x, cap), cap) = {
+  if (x <= cap) { prove } else { prove }
+}
+
+// One-word `prove` for arithmetic, inequalities, and propositional logic
+theorem squareSum(a: Nat, b: Nat): (a + b) * (a + b) === a * a + 2 * (a * b) + b * b = prove
+theorem linearWindow(x: Nat, lo: Le(10, x), hi: Le(x, 20)): Le(x, 25) = prove
+```

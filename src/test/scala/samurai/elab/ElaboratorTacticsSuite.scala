@@ -627,4 +627,58 @@ class ElaboratorTacticsSuite extends FunSuite {
     val env = checkOk(source)
     assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
   }
+
+  test("tactic-free proof mode: refl, prove, sym/trans/cong, flow-sensitive if, expression calc, and shadowing safety") {
+    val source =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |
+        |// Contextual shadowing safety: user parameters named refl/prove/cong/sym/trans still work!
+        |def shadowSafe(refl: Nat, prove: Nat, cong: Nat, sym: Nat, trans: Nat): Nat = {
+        |  refl + prove + cong + sym + trans
+        |}
+        |
+        |def clampLocal(x: Nat, cap: Nat): Nat = {
+        |  if (x <= cap) { x } else { cap }
+        |}
+        |
+        |theorem clampLocalBound(x: Nat, cap: Nat): Le(clampLocal(x, cap), cap) = {
+        |  if (x <= cap) { prove } else { prove }
+        |}
+        |
+        |theorem addZeroShort(n: Nat): n + 0 === n = {
+        |  n match {
+        |    case Nat.Zero => refl
+        |    case Nat.Succ(p) => cong(Nat.Succ, addZeroShort(p))
+        |  }
+        |}
+        |
+        |theorem eqChainShort(a: Nat, b: Nat, c: Nat, h1: a === b, h2: c === b): a === c = {
+        |  trans(h1, sym(h2))
+        |}
+        |
+        |theorem calcUsingAndImplicit(a: Nat, b: Nat): 0 + (a + b) === b + a = {
+        |  calc {
+        |    0 + (a + b)
+        |    === a + b
+        |    === b + a using prove
+        |  }
+        |}
+      """.stripMargin
+
+    val env = checkOk(source)
+    assertEquals(env.kernelEnv.allAxiomsUsed, Set.empty[String])
+
+    // Negative test: `prove` must reject false statements cleanly (E057)
+    val badSource =
+      """
+        |import Prelude.*
+        |import Nat.*
+        |theorem bogus: 2 === 3 = prove
+      """.stripMargin
+    val err = Elaborator.checkSource("badProve.samurai", badSource, baseEnv)
+    assert(err.isLeft, "`prove` must reject false statements")
+    assertEquals(err.left.toOption.get.code, "E057")
+  }
 }

@@ -131,17 +131,27 @@ partial def collatzSteps(value: Nat): Nat = {
 
 Inside `do { ... }`, `val x <- action` desugars to `bind(action, x => rest)`, `val x = expr` creates a pure local binding, and a standalone expression statement `action` chains via `bind(action, _ => rest)`. Because `do` is contextual (only active before `{`), identifiers named `do` remain valid everywhere else. See [IO_VERIFICATION.md](IO_VERIFICATION.md) for verified IO programs, `HoareIO` invariants, and real-runtime extraction.
 
-## Equational Reasoning (`calc { ... }`)
+## Equational Reasoning (`calc { ... }`) & Tactic-Free Proof Expressions
+
+Inside `calc { ... }`, each step accepts `by { ... }`, `using proofExpr`, `= proofExpr`, or no justification at all when the step holds by computation (`refl`):
+
 ```scala
 theorem calcExample[Element](first: List[Element], second: List[Element], third: List[Element]):
   length((first ++ second) ++ third) === length(third) + (length(first) + length(second)) = {
   calc {
     length((first ++ second) ++ third)
     === (length(first) + length(second)) + length(third) by { simp }
-    === length(third) + (length(first) + length(second)) by { arith }
+    === length(third) + (length(first) + length(second)) using prove
   }
 }
 ```
+
+For short tactic-free proofs (see `examples/TacticFreeProofs.samurai`), Proof Samurai also provides contextual expression-level helpers (never shadowing user variables of the same name):
+- `refl` — type-inferred `Eq.Refl`
+- `prove` — one-word 0-axiom automatic proof expression (`refl` / `arith` / `omega` / `cc` / `tauto` / `simp(*)` / `decide` / `auto`)
+- `sym(eq)`, `trans(eq1, eq2)`, `cong(fn, eq)` — type-inferred equality combinators
+- Flow-sensitive `if (cond) { ... } else { ... }` in `Prop` positions — automatically supplies `cond === true` / `cond === false` to each branch
+- Direct structural recursion in `theorem` definitions (checked by the kernel's `Termination` checker)
 
 ## Built-In Tactics (`by { ... }`)
 - **Structure**: `intro(x)`, `intros(x, y)`, `revert(x)`, `rename(old, new)`, `exact(term)`, `apply(term)`, `assumption`, `have(name: Type) { ... }`, `specialize(hyp, arg1, ...)`, `obtain(x, h) = expr`

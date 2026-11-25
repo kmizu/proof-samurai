@@ -140,9 +140,9 @@ partial def collatzSteps(value: Nat): Nat = {
 
 `do { ... }` の内部では、`val x <- action` が `bind(action, x => rest)` へ、`val x = expr` が純粋なローカル束縛へ、単独の式文 `action` が `bind(action, _ => rest)` へ脱糖されます。`do` は `{` の直前でのみ有効な文脈キーワードのため、それ以外の場所では識別子 `do` もそのまま使えます。検証済み IO プログラム・`HoareIO` 不変条件・実ランタイム抽出の詳細は [IO_VERIFICATION.md](IO_VERIFICATION.md) を参照してください。
 
-## 等式推論（`calc { ... }`）
+## 等式推論（`calc { ... }`）とタクティク不要の証明式
 
-複数の等式変形を順序立てて記述できます。各ステップは内部で推移律（`Eq.trans`）のカーネル証明項に変換されます。
+`calc { ... }` の各ステップでは、`by { ... }` のほかに `using 証明式`・`= 証明式` を指定でき、計算だけで一致するステップは理由を省略して自動 `refl` にできます。各ステップは内部で推移律（`Eq.trans`）のカーネル証明項に変換されます。
 
 ```scala
 theorem calcExample[Element](first: List[Element], second: List[Element], third: List[Element]):
@@ -150,10 +150,17 @@ theorem calcExample[Element](first: List[Element], second: List[Element], third:
   calc {
     length((first ++ second) ++ third)
     === (length(first) + length(second)) + length(third) by { simp }
-    === length(third) + (length(first) + length(second)) by { arith }
+    === length(third) + (length(first) + length(second)) using prove
   }
 }
 ```
+
+タクティクを使わず短く証明するための式レベル支援（同名のユーザー変数があればそちらが優先される文脈依存機能、`examples/TacticFreeProofs.samurai` 参照）：
+- `refl` — 期待型から `Eq.Refl` を自動推論
+- `prove` — 1 語の公理 0 自動証明式（`refl` / `arith` / `omega` / `cc` / `tauto` / `simp(*)` / `decide` / `auto`）
+- `sym(eq)` / `trans(eq1, eq2)` / `cong(fn, eq)` — 型引数を省略できる等式コンビネータ
+- `Prop` 位置での条件を覚える `if (cond) { ... } else { ... }` — 各分岐に `cond === true` / `cond === false` を自動注入
+- `theorem` 本体での直接構造的再帰（カーネルの停止性検査 `Termination` により検証）
 
 ## 組み込みタクティク一覧（`by { ... }`）
 

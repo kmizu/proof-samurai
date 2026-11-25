@@ -1065,10 +1065,15 @@ object Parser {
           case TokenKind.KwBy => parseTacticBlock()
           case TokenKind.Eq =>
             advance()
-            expr()
+            parseComparison()
+          case TokenKind.Ident("using") =>
+            advance()
+            parseComparison()
           case TokenKind.LBrace => parseBlockExpr()
+          case TokenKind.EqEqEq | TokenKind.RBrace | TokenKind.Semi =>
+            SurfaceExpr.VarExpr("refl", eqTok.span)
           case other =>
-            fail("P018", s"Expected 'by {{ ... }}' or '= proof' after calc step, found $other")
+            fail("P018", s"Expected 'by {{ ... }}', 'using proof', '= proof', or next '===' after calc step, found $other")
         }
         steps += CalcStep(nextRhs, proofExpr, eqTok.span.merge(proofExpr.span))
         skipSemis()

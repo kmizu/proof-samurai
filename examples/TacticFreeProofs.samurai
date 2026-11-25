@@ -1,0 +1,129 @@
+module TacticFreeProofs {
+  import Prelude.*
+  import Nat.*
+  import List.*
+  import Tree.*
+
+  // =========================================================================
+  // Tactic-Free Short Proofs in Proof Samurai (ZERO `by { ... }` blocks!)
+  //
+  // Every theorem below is written as an ordinary functional expression:
+  //   - `refl`            : type-inferred reflexivity (`Eq.Refl`)
+  //   - `prove`           : 1-word 0-axiom automatic proof expression
+  //   - `sym` / `trans` / `cong` : type-inferred equality combinators
+  //   - `calc { ... using ... }` : expression-based equational chains
+  //   - Dependent `match`        : automatic motive inference
+  //   - Flow-sensitive `if`      : automatic branch condition equations
+  // =========================================================================
+
+  // 1. Structural induction on Nat — 4 lines, zero tactics!
+  theorem addZeroRightDirect(n: Nat): n + 0 === n = {
+    n match {
+      case Nat.Zero       => refl
+      case Nat.Succ(pred) => cong(Nat.Succ, addZeroRightDirect(pred))
+    }
+  }
+
+  // 2. Recursive user function + `calc` with `using` and implicit definitional steps
+  def double(n: Nat): Nat = {
+    n match {
+      case Nat.Zero       => 0
+      case Nat.Succ(pred) => Nat.Succ(Nat.Succ(double(pred)))
+    }
+  }
+
+  theorem doubleIsAddSelf(n: Nat): double(n) === n + n = {
+    n match {
+      case Nat.Zero       => refl
+      case Nat.Succ(pred) => calc {
+        Nat.Succ(Nat.Succ(double(pred)))
+        === Nat.Succ(Nat.Succ(pred + pred)) using cong(k => Nat.Succ(Nat.Succ(k)), doubleIsAddSelf(pred))
+        === Nat.Succ(pred) + Nat.Succ(pred) using prove
+      }
+    }
+  }
+
+  // 3. List induction + expression-based `calc` (notice unannotated lambda `k => h + k`!)
+  def total(items: List[Nat]): Nat = {
+    items match {
+      case []     => 0
+      case h :: t => h + total(t)
+    }
+  }
+
+  theorem totalOfAppend(xs: List[Nat], ys: List[Nat]):
+    total(xs ++ ys) === total(xs) + total(ys) = {
+    xs match {
+      case []     => refl
+      case h :: t => calc {
+        h + total(t ++ ys)
+        === h + (total(t) + total(ys)) using cong(k => h + k, totalOfAppend(t, ys))
+        === (h + total(t)) + total(ys) using prove
+      }
+    }
+  }
+
+  // 4. Flow-sensitive `if` in proofs — branch condition `(x <= cap) === true/false` is automatic!
+  def clamp(x: Nat, cap: Nat): Nat = {
+    if (x <= cap) { x } else { cap }
+  }
+
+  theorem clampStaysBelowCap(x: Nat, cap: Nat): Le(clamp(x, cap), cap) = {
+    if (x <= cap) { prove } else { prove }
+  }
+
+  def maxNat(a: Nat, b: Nat): Nat = {
+    if (a <= b) { b } else { a }
+  }
+
+  theorem maxGeLeft(a: Nat, b: Nat): Le(a, maxNat(a, b)) = {
+    if (a <= b) { prove } else { prove }
+  }
+
+  theorem maxGeRight(a: Nat, b: Nat): Le(b, maxNat(a, b)) = {
+    if (a <= b) { prove } else { prove }
+  }
+
+  // 5. Type-inferred `sym`, `trans`, and `cong` (no explicit type arguments needed!)
+  theorem meetInMiddle(a: Nat, b: Nat, c: Nat, h1: a === b, h2: c === b): a === c = {
+    trans(h1, sym(h2))
+  }
+
+  theorem liftEq(f: Nat => Nat, a: Nat, b: Nat, h: a === b): f(a) === f(b) = {
+    cong(f, h)
+  }
+
+  // 6. One-word `prove` for arithmetic, inequalities, congruence closure, and propositional logic
+  theorem squareSum(a: Nat, b: Nat): (a + b) * (a + b) === a * a + 2 * (a * b) + b * b = prove
+
+  theorem linearWindow(x: Nat, lo: Le(10, x), hi: Le(x, 20)): Le(x, 25) = prove
+
+  theorem propDistribute(P: Prop, Q: Prop, R: Prop):
+    (P /\ (Q \/ R)) => ((P /\ Q) \/ (P /\ R)) = prove
+
+  // 7. Implicit definitional step in `calc` (no `using` needed when equal by computation!)
+  theorem implicitCalcStep(a: Nat, b: Nat): 0 + (a + b) === b + a = {
+    calc {
+      0 + (a + b)
+      === a + b
+      === b + a using prove
+    }
+  }
+
+  // 8. Binary tree induction with zero tactics!
+  theorem mirrorTwiceDirect[A](tree: Tree[A]): mirror(mirror(tree)) === tree = {
+    tree match {
+      case Tree.Leaf => refl
+      case Tree.Node(left, value, right) => calc {
+        Tree.Node[A](mirror(mirror(left)), value, mirror(mirror(right)))
+        === Tree.Node[A](left, value, mirror(mirror(right))) using cong(l => Tree.Node[A](l, value, mirror(mirror(right))), mirrorTwiceDirect[A](left))
+        === Tree.Node[A](left, value, right)                 using cong(r => Tree.Node[A](left, value, r), mirrorTwiceDirect[A](right))
+      }
+    }
+  }
+
+  #eval clamp(12, 5)
+  #eval maxNat(7, 19)
+  #axioms clampStaysBelowCap
+  #axioms mirrorTwiceDirect
+}

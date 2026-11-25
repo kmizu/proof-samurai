@@ -180,3 +180,47 @@ def sortVerified(items: List[Nat]): Subset[List[Nat]] = {
 | `partial def` | 停止性が未知・無界な処理、アプリ境界の処理 | なし（型・網羅性のみ検査） | 不可（`K031` で隔離） | 通常の関数（マニフェストに明記） |
 
 まずはコアとなるアルゴリズムやデータ構造だけを通常の `def`（または `termination_by`）で書いて必要な性質を証明し、周辺の入出力や無界ループは `partial def` や抽出先の Scala 3 / TypeScript 側に置くのが現実的な設計です。
+
+---
+
+## 5. タクティクを使わず短く証明する書き方（`TacticFreeProofs.samurai`）
+
+`by { ... }` タクティクスクリプトを使わず、通常の関数型プログラムの式だけで簡潔に証明を書くこともできます。Proof Samurai には公理 0・カーネル変更 0 の 5 つの支援機能があります（以下はすべて `examples/TacticFreeProofs.samurai` で検証済みの実コードです）。
+
+- **`refl` 式**: 期待される等式型 `a === b` から自動で `Eq.Refl[A, a]` を推論します。
+- **`sym(eq)` / `trans(eq1, eq2)` / `cong(fn, eq)`**: 型引数をすべて省略できる等式コンビネータ（`cong` は `Nat.Succ` のようなコンストラクタや、型注釈なしラムダ `k => h + k` もそのまま渡せます）。
+- **式ベースの `calc`**: `=== rhs using 式` で通常の式を根拠に渡せ、計算だけで一致する段は `using` を省略して自動 `refl` にできます。
+- **条件を覚える `if`（Flow-Sensitive `if`）**: `Prop` を返す `if (cond) { ... } else { ... }` では、then 節に `cond === true`、else 節に `cond === false` が自動で仮定に入ります。
+- **1 語の自動証明式 `prove`**: タクティクブロックを開かずに、`refl` / `arith` / `omega` / `cc` / `tauto` / `simp(*)` / `decide` / `auto` を順に試して公理 0 の証明項を生成します。
+
+```scala
+// 帰納法を 4 行で書く — タクティク 0 個！
+theorem addZeroRightDirect(n: Nat): n + 0 === n = {
+  n match {
+    case Nat.Zero       => refl
+    case Nat.Succ(pred) => cong(Nat.Succ, addZeroRightDirect(pred))
+  }
+}
+
+// 式ベースの `calc` を使ったリスト帰納法
+theorem totalOfAppend(xs: List[Nat], ys: List[Nat]):
+  total(xs ++ ys) === total(xs) + total(ys) = {
+  xs match {
+    case []     => refl
+    case h :: t => calc {
+      h + total(t ++ ys)
+      === h + (total(t) + total(ys)) using cong(k => h + k, totalOfAppend(t, ys))
+      === (h + total(t)) + total(ys) using prove
+    }
+  }
+}
+
+// 条件を覚える `if` + `prove` — 1 行で完了！
+theorem clampStaysBelowCap(x: Nat, cap: Nat): Le(clamp(x, cap), cap) = {
+  if (x <= cap) { prove } else { prove }
+}
+
+// 算術・不等式・命題論理は `= prove` の 1 語だけ
+theorem squareSum(a: Nat, b: Nat): (a + b) * (a + b) === a * a + 2 * (a * b) + b * b = prove
+theorem linearWindow(x: Nat, lo: Le(10, x), hi: Le(x, 20)): Le(x, 25) = prove
+```

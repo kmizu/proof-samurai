@@ -424,7 +424,7 @@ object Elaborator {
       }
 
       val binders = allBinders.result()
-      val isRecursive = !decl.isTheorem && mentionsIdent(decl.body, decl.name)
+      val isRecursive = !decl.body.isInstanceOf[SurfaceExpr.TacticBlockExpr] && mentionsIdent(decl.body, decl.name)
 
       // 3. Return type
       val returnTypeCore: Term = decl.returnType match {
@@ -1613,17 +1613,63 @@ object Elaborator {
           (t, nextEnv)
         }
 
+      case SurfaceExpr.VarExpr("refl", span) if isUnboundTermBuiltin(env, localCtx, "refl") =>
+        expectedVal match {
+          case Value.VInd("Eq", List(eqTyVal, lhsVal, rhsVal)) =>
+            val fuel = new NbE.Fuel()
+            val eqTyTerm = NbE.quote(env.kernelEnv, localCtx.depth, eqTyVal, fuel)
+            val lhsTerm = NbE.quote(env.kernelEnv, localCtx.depth, lhsVal, fuel)
+            val rhsTerm = NbE.quote(env.kernelEnv, localCtx.depth, rhsVal, fuel)
+            metaCtx.unify(env.kernelEnv, localCtx, lhsTerm, rhsTerm) match {
+              case Right(()) =>
+                val zonkedTy = metaCtx.zonk(eqTyTerm, localCtx.depth)
+                val zonkedLhs = metaCtx.zonk(lhsTerm, localCtx.depth)
+                Right((Term.apps(Term.Ctor("Eq", "Refl"), List(zonkedTy, zonkedLhs)), env))
+              case Left(_) =>
+                val normLhs = NbE.normalize(env.kernelEnv, localCtx, metaCtx.zonk(lhsTerm, localCtx.depth))
+                val normRhs = NbE.normalize(env.kernelEnv, localCtx, metaCtx.zonk(rhsTerm, localCtx.depth))
+                Left(
+                  Diagnostic(
+                    Diagnostic.Severity.Error,
+                    "E058",
+                    s"'refl' failed: '${Pretty.show(normLhs, localCtx.names)}' is not definitionally equal to '${Pretty.show(normRhs, localCtx.names)}'",
+                    span
+                  )
+                )
+            }
+          case _ =>
+            Left(
+              Diagnostic(
+                Diagnostic.Severity.Error,
+                "E058",
+                s"'refl' expects an equality type ('a === b'), found '${Pretty.show(zonkedExpected, localCtx.names)}'",
+                span
+              )
+            )
+        }
+
+      case SurfaceExpr.VarExpr("prove", span) if isUnboundTermBuiltin(env, localCtx, "prove") =>
+        Tactics.tryAutoProve(env, localCtx, zonkedExpected, span)
+
       case SurfaceExpr.IfExpr(cond, thenBranch, elseBranch, span) =>
-        val desugared = SurfaceExpr.MatchExpr(
-          cond,
-          None,
-          List(
-            MatchCase(Pattern.BoolLit(true, span), thenBranch, thenBranch.span),
-            MatchCase(Pattern.BoolLit(false, span), elseBranch, elseBranch.span)
-          ),
-          span
-        )
-        checkExpr(env, metaCtx, localCtx, desugared, zonkedExpected)
+        val isPropTarget =
+          env.kernelEnv.inductives.contains("Eq") &&
+            env.kernelEnv.inductives.contains("Bool") &&
+            TypeChecker.inferSort(env.kernelEnv, localCtx, zonkedExpected).contains(Sort.Prop)
+        if (isPropTarget) {
+          elaborateFlowSensitiveIf(env, metaCtx, localCtx, cond, thenBranch, elseBranch, zonkedExpected, span)
+        } else {
+          val desugared = SurfaceExpr.MatchExpr(
+            cond,
+            None,
+            List(
+              MatchCase(Pattern.BoolLit(true, span), thenBranch, thenBranch.span),
+              MatchCase(Pattern.BoolLit(false, span), elseBranch, elseBranch.span)
+            ),
+            span
+          )
+          checkExpr(env, metaCtx, localCtx, desugared, zonkedExpected)
+        }
 
       case matchExpr: SurfaceExpr.MatchExpr =>
         elaborateMatch(env, metaCtx, localCtx, matchExpr, Some(zonkedExpected)).map { case (t, _, nextEnv) =>
@@ -1804,6 +1850,18 @@ object Elaborator {
 
     case SurfaceExpr.TypeAppExpr(callee, typeArgs, span) =>
       elaborateTypeApp(env, metaCtx, localCtx, callee, typeArgs, span)
+
+    case SurfaceExpr.CallExpr(SurfaceExpr.VarExpr("sym", _), List(eqExpr), span)
+        if isUnboundTermBuiltin(env, localCtx, "sym") =>
+      elaborateTermSym(env, metaCtx, localCtx, eqExpr, span)
+
+    case SurfaceExpr.CallExpr(SurfaceExpr.VarExpr("trans", _), List(eq1Expr, eq2Expr), span)
+        if isUnboundTermBuiltin(env, localCtx, "trans") =>
+      elaborateTermTrans(env, metaCtx, localCtx, eq1Expr, eq2Expr, span)
+
+    case SurfaceExpr.CallExpr(SurfaceExpr.VarExpr("cong", _), List(fnExpr, eqExpr), span)
+        if isUnboundTermBuiltin(env, localCtx, "cong") =>
+      elaborateTermCong(env, metaCtx, localCtx, fnExpr, eqExpr, span)
 
     case SurfaceExpr.CallExpr(callee, args, span) =>
       elaborateCall(env, metaCtx, localCtx, callee, args, span)
@@ -3024,5 +3082,235 @@ object Elaborator {
     val finalProof = accProofOpt.get
     val finalType = Term.apps(Term.Ind("Eq"), List(eqType, startTerm, curTerm))
     Right((finalProof, finalType, curEnv))
+  }
+
+  private def isUnboundTermBuiltin(env: ElabEnv, localCtx: LocalCtx, name: String): Boolean =
+    !localCtx.entries.exists(_.name == name) && !env.kernelEnv.contains(name)
+
+  /**
+   * Flow-sensitive `if (cond) { thenBranch } else { elseBranch }` in Prop positions:
+   * automatically provides `_if_eq : cond === true` in the then branch and
+   * `_if_eq : cond === false` in the else branch via a pure 0-axiom `Eq.Refl` motive!
+   */
+  private def elaborateFlowSensitiveIf(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    cond: SurfaceExpr,
+    thenBranch: SurfaceExpr,
+    elseBranch: SurfaceExpr,
+    expectedType: Term,
+    span: Span
+  ): Either[Diagnostic, (Term, ElabEnv)] = {
+    val boolTy = Term.Ind("Bool")
+    for {
+      condRes <- checkExpr(env, metaCtx, localCtx, cond, boolTy)
+      (condTermRaw, env1) = condRes
+      condTerm = metaCtx.zonk(condTermRaw, localCtx.depth)
+      eqName = s"_if_eq_${localCtx.depth}"
+      trueEqTy = Term.apps(Term.Ind("Eq"), List(boolTy, condTerm, Term.Ctor("Bool", "True")))
+      falseEqTy = Term.apps(Term.Ind("Eq"), List(boolTy, condTerm, Term.Ctor("Bool", "False")))
+      expectedShifted = Term.shift(expectedType, 1)
+      thenRes <- checkExpr(env1, metaCtx, localCtx.push(eqName, trueEqTy), thenBranch, expectedShifted)
+      (thenTerm, env2) = thenRes
+      elseRes <- checkExpr(env2, metaCtx, localCtx.push(eqName, falseEqTy), elseBranch, expectedShifted)
+      (elseTerm, env3) = elseRes
+    } yield {
+      val motive = Term.Lam(
+        "_ifScrut",
+        boolTy,
+        Term.Pi(
+          "_ifEq",
+          Term.apps(Term.Ind("Eq"), List(boolTy, Term.shift(condTerm, 1), Term.Var(0))),
+          Term.shift(expectedType, 2)
+        )
+      )
+      val matchTerm = Term.Match(
+        "Bool",
+        Nil,
+        motive,
+        condTerm,
+        List(
+          MatchBranch("True", Nil, Term.Lam(eqName, trueEqTy, thenTerm)),
+          MatchBranch("False", Nil, Term.Lam(eqName, falseEqTy, elseTerm))
+        )
+      )
+      val reflCond = Term.apps(Term.Ctor("Eq", "Refl"), List(boolTy, condTerm))
+      (Term.App(matchTerm, reflCond), env3)
+    }
+  }
+
+  private def extractInferredEq(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    tyTerm: Term,
+    helperName: String,
+    span: Span
+  ): Either[Diagnostic, (Term, Term, Term)] = {
+    val fuel = new NbE.Fuel()
+    val evalEnv = NbE.buildEvalEnv(env.kernelEnv, localCtx, fuel)
+    NbE.evaluate(env.kernelEnv, evalEnv, metaCtx.zonk(tyTerm, localCtx.depth), fuel) match {
+      case Value.VInd("Eq", List(aVal, lhsVal, rhsVal)) =>
+        Right(
+          (
+            NbE.quote(env.kernelEnv, localCtx.depth, aVal, fuel),
+            NbE.quote(env.kernelEnv, localCtx.depth, lhsVal, fuel),
+            NbE.quote(env.kernelEnv, localCtx.depth, rhsVal, fuel)
+          )
+        )
+      case _ =>
+        Left(
+          Diagnostic(
+            Diagnostic.Severity.Error,
+            "E059",
+            s"'$helperName' expects an equality proof ('a === b'), found '${Pretty.show(metaCtx.zonk(tyTerm, localCtx.depth), localCtx.names)}'",
+            span
+          )
+        )
+    }
+  }
+
+  /** Term-mode `sym(eq)` — infers `A, a, b` and builds a pure 0-axiom `Eq` symmetry `Match`. */
+  private def elaborateTermSym(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    eqExpr: SurfaceExpr,
+    span: Span
+  ): Either[Diagnostic, (Term, Term, ElabEnv)] = {
+    for {
+      _ <- requireSymbol(env, "Eq", span)
+      eqRes <- inferExpr(env, metaCtx, localCtx, eqExpr)
+      (eqTerm, eqTyRaw, env1) = eqRes
+      eqParts <- extractInferredEq(env1, metaCtx, localCtx, eqTyRaw, "sym", eqExpr.span)
+      (aTerm, lhsTerm, rhsTerm) = eqParts
+    } yield {
+      val a1 = Term.shift(aTerm, 1)
+      val lhs1 = Term.shift(lhsTerm, 1)
+      val a2 = Term.shift(aTerm, 2)
+      val lhs2 = Term.shift(lhsTerm, 2)
+      val symMotive = Term.Lam(
+        "_y",
+        aTerm,
+        Term.Lam(
+          "_q",
+          Term.apps(Term.Ind("Eq"), List(a1, lhs1, Term.Var(0))),
+          Term.apps(Term.Ind("Eq"), List(a2, Term.Var(1), lhs2))
+        )
+      )
+      val symProof = Term.Match(
+        "Eq",
+        List(aTerm, lhsTerm),
+        symMotive,
+        eqTerm,
+        List(MatchBranch("Refl", Nil, Term.apps(Term.Ctor("Eq", "Refl"), List(aTerm, lhsTerm))))
+      )
+      val resultTy = Term.apps(Term.Ind("Eq"), List(aTerm, rhsTerm, lhsTerm))
+      (symProof, resultTy, env1)
+    }
+  }
+
+  /** Term-mode `trans(eq1, eq2)` — infers types & middle term and builds a pure 0-axiom `Eq` transitivity `Match`. */
+  private def elaborateTermTrans(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    eq1Expr: SurfaceExpr,
+    eq2Expr: SurfaceExpr,
+    span: Span
+  ): Either[Diagnostic, (Term, Term, ElabEnv)] = {
+    for {
+      _ <- requireSymbol(env, "Eq", span)
+      r1 <- inferExpr(env, metaCtx, localCtx, eq1Expr)
+      (eq1Term, eq1TyRaw, env1) = r1
+      p1 <- extractInferredEq(env1, metaCtx, localCtx, eq1TyRaw, "trans", eq1Expr.span)
+      (a1Term, xTerm, y1Term) = p1
+      r2 <- inferExpr(env1, metaCtx, localCtx, eq2Expr)
+      (eq2Term, eq2TyRaw, env2) = r2
+      p2 <- extractInferredEq(env2, metaCtx, localCtx, eq2TyRaw, "trans", eq2Expr.span)
+      (a2Term, y2Term, zTerm) = p2
+      _ <- metaCtx.unify(env2.kernelEnv, localCtx, a1Term, a2Term).left.map(err =>
+        Diagnostic(Diagnostic.Severity.Error, "E059", s"'trans' type mismatch: $err", span)
+      )
+      _ <- metaCtx.unify(env2.kernelEnv, localCtx, y1Term, y2Term).left.map(err =>
+        Diagnostic(Diagnostic.Severity.Error, "E059", s"'trans' middle-term mismatch: $err", span)
+      )
+    } yield {
+      val aTerm = metaCtx.zonk(a1Term, localCtx.depth)
+      val xZ = metaCtx.zonk(xTerm, localCtx.depth)
+      val yZ = metaCtx.zonk(y1Term, localCtx.depth)
+      val zZ = metaCtx.zonk(zTerm, localCtx.depth)
+      val a1 = Term.shift(aTerm, 1)
+      val y1 = Term.shift(yZ, 1)
+      val a2 = Term.shift(aTerm, 2)
+      val x2 = Term.shift(xZ, 2)
+      val transMotive = Term.Lam(
+        "_y",
+        aTerm,
+        Term.Lam(
+          "_q",
+          Term.apps(Term.Ind("Eq"), List(a1, y1, Term.Var(0))),
+          Term.apps(Term.Ind("Eq"), List(a2, x2, Term.Var(1)))
+        )
+      )
+      val transProof = Term.Match(
+        "Eq",
+        List(aTerm, yZ),
+        transMotive,
+        eq2Term,
+        List(MatchBranch("Refl", Nil, eq1Term))
+      )
+      val resultTy = Term.apps(Term.Ind("Eq"), List(aTerm, xZ, zZ))
+      (transProof, resultTy, env2)
+    }
+  }
+
+  /** Term-mode `cong(fn, eq)` — supports constructors (`Nat.Succ`) and unannotated lambdas (`k => h + k`)! */
+  private def elaborateTermCong(
+    env: ElabEnv,
+    metaCtx: MetaContext,
+    localCtx: LocalCtx,
+    fnExpr: SurfaceExpr,
+    eqExpr: SurfaceExpr,
+    span: Span
+  ): Either[Diagnostic, (Term, Term, ElabEnv)] = {
+    for {
+      _ <- requireSymbol(env, "Eq", span)
+      eqRes <- inferExpr(env, metaCtx, localCtx, eqExpr)
+      (eqTerm, eqTyRaw, env1) = eqRes
+      eqParts <- extractInferredEq(env1, metaCtx, localCtx, eqTyRaw, "cong", eqExpr.span)
+      (aTerm, lhsTerm, rhsTerm) = eqParts
+      codMeta = metaCtx.freshMeta(localCtx.depth, Term.USort(Sort.Type(0)), Some("congCodomain"))
+      expectedFnTy = Term.Pi("_x", aTerm, Term.shift(codMeta, 1))
+      fnRes <- checkExpr(env1, metaCtx, localCtx, fnExpr, expectedFnTy)
+      (fnTermRaw, env2) = fnRes
+    } yield {
+      val fnTerm = metaCtx.zonk(fnTermRaw, localCtx.depth)
+      val bTerm = metaCtx.zonk(codMeta, localCtx.depth)
+      val a1 = Term.shift(aTerm, 1)
+      val lhs1 = Term.shift(lhsTerm, 1)
+      val b2 = Term.shift(bTerm, 2)
+      val fn2 = Term.shift(fnTerm, 2)
+      val lhs2 = Term.shift(lhsTerm, 2)
+      val congMotive = Term.Lam(
+        "_y",
+        aTerm,
+        Term.Lam(
+          "_q",
+          Term.apps(Term.Ind("Eq"), List(a1, lhs1, Term.Var(0))),
+          Term.apps(Term.Ind("Eq"), List(b2, Term.App(fn2, lhs2), Term.App(fn2, Term.Var(1))))
+        )
+      )
+      val congProof = Term.Match(
+        "Eq",
+        List(aTerm, lhsTerm),
+        congMotive,
+        eqTerm,
+        List(MatchBranch("Refl", Nil, Term.apps(Term.Ctor("Eq", "Refl"), List(bTerm, Term.App(fnTerm, lhsTerm)))))
+      )
+      val resultTy = Term.apps(Term.Ind("Eq"), List(bTerm, Term.App(fnTerm, lhsTerm), Term.App(fnTerm, rhsTerm)))
+      (congProof, resultTy, env2)
+    }
   }
 }
