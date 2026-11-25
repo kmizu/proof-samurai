@@ -94,7 +94,7 @@ object NbE {
     kernelEnv: KernelEnv,
     localCtx: LocalCtx,
     term: Term,
-    maxSteps: Int = 200_000
+    maxSteps: Int = 50_000
   ): Either[String, Term] = {
     try {
       val evalEnvWithPartials = kernelEnv.copy(
@@ -109,6 +109,8 @@ object NbE {
     } catch {
       case ex: FuelExceededException =>
         Left(s"Evaluation step limit exceeded ($maxSteps steps): ${ex.message}")
+      case _: StackOverflowError =>
+        Left("Evaluation recursion depth limit exceeded (possible non-terminating partial function)")
     }
   }
 
@@ -444,9 +446,9 @@ object NbE {
       case (Value.VCtor(ind1, ctor1, args1), Value.VCtor(ind2, ctor2, args2)) =>
         if (ind1 != ind2 || ctor1 != ctor2 || args1.length != args2.length) false
         else {
-          // If inductive lives in Prop, all inhabitants are definitionally equal (proof irrelevance).
+          // Proof irrelevance applies strictly to Prop-typed fields, while parameters and
+          // computational/index fields (e.g. Eq.Refl's value or Exists's witness) are always checked!
           kernelEnv.inductives.get(ind1) match {
-            case Some(indEntry) if indEntry.sort == Sort.Prop => true
             case Some(indEntry) =>
               val paramCount = indEntry.numParams
               val ctorOpt = indEntry.ctor(ctor1)

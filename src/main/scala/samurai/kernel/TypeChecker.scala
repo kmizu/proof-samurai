@@ -24,6 +24,25 @@ object TypeChecker {
       case _ => ()
     }
 
+    // 0. Reject any reference to `partial def` inside inductive types, fields, or result indices (K031)!
+    val leakedIndPartials =
+      inductive.params.flatMap(b => kernelEnv.collectPartials(b.ty)).toSet ++
+        inductive.indices.flatMap(b => kernelEnv.collectPartials(b.ty)).toSet ++
+        inductive.constructors.flatMap { c =>
+          c.fields.flatMap(f => kernelEnv.collectPartials(f.ty)) ++
+            c.resultIndices.flatMap(kernelEnv.collectPartials)
+        }.toSet
+    if (leakedIndPartials.nonEmpty) {
+      break(
+        Left(
+          KernelError(
+            "K031",
+            s"Inductive type '${inductive.name}' cannot reference partial function(s): ${leakedIndPartials.toList.sorted.mkString(", ")}"
+          )
+        )
+      )
+    }
+
     // 1. Check parameter telescope
     var paramCtx = LocalCtx.empty
     for (param <- inductive.params) {
@@ -161,16 +180,7 @@ object TypeChecker {
       }
       for {
         _ <- inferSort(kernelEnv, LocalCtx.empty, declaredType)
-        codSort <- codomainSort(kernelEnv, declaredType)
-        _ <-
-          if (codSort == Sort.Prop)
-            Left(
-              KernelError(
-                "K030",
-                s"Partial function '$name' cannot return a Prop type (would compromise logical soundness)"
-              )
-            )
-          else Right(())
+        _ <- checkPartialReturnType(kernelEnv, name, declaredType)
         // Register opaque self-reference so partial body may make unrestricted recursive calls via Term.Const(name),
         // while keeping Term.Fix strictly guarded and keeping NbE non-unfolding during type checking!
         tentativeSelf = DefEntry(
@@ -250,18 +260,9 @@ object TypeChecker {
         case Left(err) => break(Left(err))
         case Right(_)  => ()
       }
-      codomainSort(kernelEnv, declaredType) match {
+      checkPartialReturnType(kernelEnv, name, declaredType) match {
         case Left(err) => break(Left(err))
-        case Right(Sort.Prop) =>
-          break(
-            Left(
-              KernelError(
-                "K030",
-                s"Partial function '$name' cannot return a Prop type (would compromise logical soundness)"
-              )
-            )
-          )
-        case Right(_) => ()
+        case Right(()) => ()
       }
       tentativeEnv = tentativeEnv.addDef(
         DefEntry(name, declaredType, Term.Const(name), transparent = false, isTheorem = false, axiomsUsed = Set.empty, isPartial = true)
@@ -289,23 +290,49 @@ object TypeChecker {
     Right(finalEnv)
   }
 
-  private def codomainSort(kernelEnv: KernelEnv, typeTerm: Term): Either[KernelError, Sort] = {
-    val fuel = new NbE.Fuel()
+  private def checkPartialReturnType(kernelEnv: KernelEnv, name: String, typeTerm: Term): Either[KernelError, Unit] = {
     var ctx = LocalCtx.empty
     var cur = NbE.normalize(kernelEnv, ctx, typeTerm)
     while (cur.isInstanceOf[Term.Pi]) {
-      val Term.Pi(name, domain, codomain) = cur: @unchecked
-      ctx = ctx.push(name, domain)
+      val Term.Pi(bName, domain, codomain) = cur: @unchecked
+      ctx = ctx.push(bName, domain)
       cur = NbE.normalize(kernelEnv, ctx, codomain)
     }
-    val _ = fuel
-    inferSort(kernelEnv, ctx, cur)
+    cur match {
+      case Term.USort(_) =>
+        Left(
+          KernelError(
+            "K030",
+            s"Partial function '$name' cannot return a universe sort (Prop/Type); partial functions must return computational data"
+          )
+        )
+      case _ =>
+        inferSort(kernelEnv, ctx, cur).flatMap {
+          case Sort.Prop =>
+            Left(
+              KernelError(
+                "K030",
+                s"Partial function '$name' cannot return a Prop type (would compromise logical soundness)"
+              )
+            )
+          case _ => Right(())
+        }
+    }
   }
 
   /** Check and register an explicit axiom (or sorry) in `kernelEnv`. */
   def checkAxiom(kernelEnv: KernelEnv, name: String, declaredType: Term): Either[KernelError, KernelEnv] = {
     if (kernelEnv.contains(name)) {
       return Left(KernelError("K001", s"Duplicate declaration name '$name'"))
+    }
+    val leakedPartials = kernelEnv.collectPartials(declaredType)
+    if (leakedPartials.nonEmpty) {
+      return Left(
+        KernelError(
+          "K031",
+          s"Axiom '$name' cannot reference partial function(s): ${leakedPartials.toList.sorted.mkString(", ")}"
+        )
+      )
     }
     inferSort(kernelEnv, LocalCtx.empty, declaredType).map { _ =>
       kernelEnv.addAxiom(AxiomEntry(name, declaredType))

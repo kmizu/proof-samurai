@@ -25,13 +25,13 @@ Proof Samurai follows the **de Bruijn criterion**: all surface elaboration, meta
    - During NbE (`NbE.scala`), `Fix` and `MutualFix` only unfold when their decreasing argument is a constructor value (`VCtor`), guaranteeing termination of normalization.
 
 5. **Total / Partial Isolation (`TypeChecker.scala`, `Env.scala`)**
-   - `partial def` declarations may use unrestricted recursion, but cannot return a `Prop` type (`K030`), are stored opaque in `KernelEnv` (never unfolded during type checking), and cannot be referenced by any total `def` or `theorem` (`K031`).
-   - Code extraction transparently reports `partialFunctions` in `ExtractionManifest` (`--total` forbids any partial function).
+   - `partial def` declarations may use unrestricted recursion, but cannot return a `Prop` type or universe sort (`K030`), are stored opaque in `KernelEnv` (never unfolded during type checking), and cannot be referenced by any total `def`, `theorem`, `enum`, or `axiom` (`K031`).
+   - `#eval` evaluates `partial def` under both step and recursion-depth guards (`E033`), and code extraction transparently reports `partialFunctions` in `ExtractionManifest` (`--total` forbids any partial function).
 
 6. **Exhaustiveness Checking (`TypeChecker.scala`)**
    - Every core `Match` must supply branches covering every constructor of the inductive type in order.
    - Surface matches on indexed families that omit provably unreachable constructors (such as `Vec[A](Nat.Succ(n))` omitting `Vec.Nil`) are compiled by the elaborator into discriminating motives and still verified in full by the kernel.
 
-6. **Explicit Axiom & `sorry` Tracking (`Env.scala`)**
+7. **Explicit Axiom & `sorry` Tracking (`Env.scala`)**
    - `KernelEnv` transitively tracks `axiomsUsed` for every checked definition and theorem.
    - `--strict` checking and strict code extraction fail if any axiom or `sorry` is used anywhere in the dependency cone.

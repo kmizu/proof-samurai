@@ -2,7 +2,7 @@
 
 Proof Samurai は **de Bruijn 基準（de Bruijn criterion）** に基づいて設計されています。構文解析、エラボレータ、メタ変数単一化、パターンマッチのコンパイル、タクティクスクリプト、自動探索（`auto`）、AI セッションのすべては**非信頼コンポーネント（untrusted）**として扱われ、すべての宣言と証明項は `KernelEnv` に登録される前に、小規模で独立した信頼カーネル（`samurai.kernel`）によって一から型検査されます。
 
-## 健全性を支える 6 つの保証
+## 健全性を支える 7 つの保証
 
 1. **宇宙階層と可述性（`Sort.scala` / `TypeChecker.scala`）**
    - `Prop : Type(0)` および `Type(i) : Type(i + 1)` を採用し、`i <= j` に対して累積的部分型付け `Type(i) <= Type(j)` を持ちます。
@@ -25,13 +25,13 @@ Proof Samurai は **de Bruijn 基準（de Bruijn criterion）** に基づいて�
    - NbE（`NbE.scala`）では、`Fix` / `MutualFix` の展開は減少引数がコンストラクタ値（`VCtor`）であるときに限られるため、正規化の停止性が保証されます。
 
 5. **全関数と `partial def` の厳格な隔離（`TypeChecker.scala`, `Env.scala`）**
-   - `partial def` は無制限の再帰を記述できますが、`Prop` を返すことは禁止され（`K030`）、`KernelEnv` 内では不透過（型検査時に展開しない）として登録され、全関数や定理からの参照は禁止されます（`K031`）。
-   - コード抽出時には `ExtractionManifest` の `partialFunctions` として明示的に監査でき、`--total` オプションで `partial` 関数を含む抽出を拒否できます。
+   - `partial def` は無制限の再帰を記述できますが、`Prop` 型や宇宙ソート（`Type` 等）を返すことは禁止され（`K030`）、`KernelEnv` 内では不透過（型検査時に展開しない）として登録され、全関数・定理・帰納型（`enum`）・公理（`axiom`）からの参照はすべて禁止されます（`K031`）。
+   - `#eval` での評価はステップ上限と再帰深さガード付きで安全に中断され（`E033`）、コード抽出時には `ExtractionManifest` の `partialFunctions` として明示的に監査できます（`--total` 指定時は拒否）。
 
 6. **網羅性検査（`TypeChecker.scala`）**
    - コア言語の `Match` は、対象帰納型のすべてのコンストラクタを定義順に網羅する分岐を持たなければなりません。
    - 表面構文で到達不能コンストラクタを省略した添字付きマッチ（例: `Vec[A](Nat.Succ(n))` で `Vec.Nil` を省略）は、エラボレータによって判別モチーフ付きコア項へ変換されたうえでカーネルによる完全検査を受けます。
 
-6. **公理・`sorry` の推移的追跡（`Env.scala`）**
+7. **公理・`sorry` の推移的追跡（`Env.scala`）**
    - `KernelEnv` は検証済みのすべての定義・定理について `axiomsUsed` を推移的に追跡します。
    - `--strict` チェックおよび厳密コード抽出は、依存関係内のどこかに `axiom` または `sorry` が含まれていた場合に失敗します。
