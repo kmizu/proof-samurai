@@ -146,3 +146,158 @@ theorem totalOrder(a: Nat, b: Nat): (ble(a, b) === true) \/ (ble(b, a) === true)
   by_cases(ble(a, b), cmp) <;> first { { left; omega } | { right; omega } }
 }
 ```
+
+
+## パターン 7: タクティクを 1 つずつ試す実例集
+
+以下の証明はすべて [`examples/TacticGallery.samurai`](https://github.com/kmizu/proof-samurai/blob/main/examples/TacticGallery.samurai) からそのまま引用しています。このファイルはテストスイートで公理 0 として検証されます（`sbt "run check examples/TacticGallery.samurai --strict"`）。各証明の上のコメントに、そのタクティクが裏でどんな通常のプログラムを組み立てているかを書いています。
+
+### 論理はプログラミング: `intros`, `obtain`, `left`, `split`, `exists`
+
+```scala
+// `P => Q => R` の証明はカリー化された関数。引数の順序を入れ替える関数がそのまま証明になる。
+theorem swapArgs(P: Prop, Q: Prop, R: Prop): (P => Q => R) => (Q => P => R) = by {
+  intros(f, q, p)
+  exact(f(p, q))
+}
+
+// `/\` はペア（`obtain` で分解）、`\/` は Either（`left` で `Inl` を選ぶ）。
+theorem andImpliesOr(P: Prop, Q: Prop): (P /\ Q) => (P \/ Q) = by {
+  intro(h)
+  obtain(hp, hq) = h
+  left
+  exact(hp)
+}
+
+// ペアを作るには両方の要素を渡す。
+theorem andFromBoth(P: Prop, Q: Prop, hp: P, hq: Q): Q /\ P = by {
+  split
+  exact(hq)
+  exact(hp)
+}
+
+// 存在命題は (証人, 証明) のペア: `Exists.Intro(Succ(n), Eq.Refl)`。
+theorem hasSuccessor(n: Nat): exists (m: Nat) => m === Nat.Succ(n) = by {
+  exists(Nat.Succ(n))
+  refl
+}
+```
+
+### 計算とコンストラクタ: `refl`, `decide`, `discriminate`, `injection`, `contradiction`
+
+```scala
+theorem sixTimesSeven: 6 * 7 === 42 = by { refl }       // プログラムを実行して閉じる
+theorem threeIsNotTen: ~Le(10, 3) = by { decide }       // 決定可能なので評価して判定
+
+// 異なるコンストラクタは衝突せず、同じコンストラクタは単射。
+theorem succIsNotZero(n: Nat, h: Nat.Succ(n) === 0): False = by {
+  discriminate(h)
+}
+
+theorem succCancel(a: Nat, b: Nat, h: Nat.Succ(a) === Nat.Succ(b)): a === b = by {
+  injection(h, eq)
+  exact(eq)
+}
+
+// `P` と `~P` が同時にあれば、どんなゴールも証明できる。
+theorem fromContradiction(P: Prop, hp: P, hnp: ~P): 1 === 2 = by {
+  contradiction
+}
+```
+
+### 等式推論: `symmetry`, `trans`, `calc`, `simp in h`
+
+```scala
+theorem meetInTheMiddle(a: Nat, b: Nat, c: Nat, h1: a === b, h2: c === b): a === c = by {
+  trans(b)
+  exact(h1)
+  symmetry
+  exact(h2)
+}
+
+theorem calcExample(a: Nat, b: Nat): (a + b) + 0 === b + a = {
+  calc {
+    (a + b) + 0
+    === a + b by { simp }
+    === b + a by { arith }
+  }
+}
+
+theorem simplifyHypothesis(a: Nat, b: Nat, h: (a + 0) === (b + 0)): a === b = by {
+  simp in h
+  exact(h)
+}
+```
+
+### 自動化: `arith`, `omega`, `cc`, `tauto`, `auto`
+
+```scala
+theorem squareOfSum(a: Nat, b: Nat): (a + b) * (a + b) === a * a + 2 * (a * b) + b * b = by {
+  arith
+}
+
+theorem windowBound(x: Nat, lo: Le(10, x), hi: Le(x, 20)): Le(x, 25) = by {
+  omega
+}
+
+theorem congruenceChain(f: Nat => Nat, a: Nat, b: Nat, c: Nat, h1: a === b, h2: f(b) === c):
+  f(f(a)) === f(c) = by {
+  cc
+}
+
+theorem distribute(P: Prop, Q: Prop, R: Prop): (P /\ (Q \/ R)) => ((P /\ Q) \/ (P /\ R)) = by {
+  tauto
+}
+```
+
+### 自作関数についての証明: `induction`, `by_cases`
+
+```scala
+def double(n: Nat): Nat = {
+  n match {
+    case Nat.Zero => 0
+    case Nat.Succ(pred) => Nat.Succ(Nat.Succ(double(pred)))
+  }
+}
+
+// 帰納法の仮定 `ih` は `pred` に対する再帰呼び出しそのもの。
+theorem doubleIsAddSelf(n: Nat): double(n) === n + n = by {
+  induction(n) {
+    case Zero => { refl }
+    case Succ(pred, ih) => {
+      simp
+      rewrite(ih)
+      refl
+    }
+  }
+}
+
+def total(items: List[Nat]): Nat = {
+  items match {
+    case List.Nil => 0
+    case List.Cons(head, tail) => head + total(tail)
+  }
+}
+
+theorem totalOfAppend(first: List[Nat], second: List[Nat]):
+  total(first ++ second) === total(first) + total(second) = by {
+  induction(first) {
+    case Nil => { simp }
+    case Cons(head, tail, ih) => {
+      simp
+      rewrite(ih)
+      arith
+    }
+  }
+}
+
+// 関数内の Bool 判定で分岐し、各分岐を `omega` に任せる。
+def clamp(x: Nat, cap: Nat): Nat = {
+  if (x <= cap) { x } else { cap }
+}
+
+theorem clampStaysBelowCap(x: Nat, cap: Nat): Le(clamp(x, cap), cap) = by {
+  unfold(clamp)
+  by_cases(ble(x, cap), cmp) <;> { simp; omega }
+}
+```

@@ -101,7 +101,7 @@ class StdlibSuite extends FunSuite {
   }
 
   test("all examples/*.samurai verify 100% axiom-free") {
-    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai", "AdvancedRecursion.samurai", "PracticalProving.samurai", "VerifiedIO.samurai")) {
+    for (example <- List("HelloProof.samurai", "VerifiedSort.samurai", "SafeVec.samurai", "Showcase.samurai", "AdvancedRecursion.samurai", "PracticalProving.samurai", "TacticGallery.samurai", "VerifiedIO.samurai")) {
       val path = Paths.get("examples", example)
       val source = java.nio.file.Files.readString(path)
       Elaborator.checkFile(path, ElabEnv(searchPaths = searchPaths)) match {

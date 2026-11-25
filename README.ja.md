@@ -93,5 +93,5 @@ Web 版（日本語 / English）: https://kmizu.github.io/proof-samurai/#ja/home
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — 組み込み HTTP サーバと Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — 分岐対応 NDJSON 証明サーバ（`ProofSessionServer`）と複数行 REPL
 - `stdlib/` — 公理 0 で検証済みの標準ライブラリ（`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`, `IO`）
-- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `VerifiedIO`）
+- `examples/` — 実行可能なサンプル（`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `TacticGallery`, `VerifiedIO`）
 - `docs/` — 英語・日本語（`docs/ja/`）ドキュメントおよび GitHub Pages サイト

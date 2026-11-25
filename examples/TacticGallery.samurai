@@ -1,0 +1,165 @@
+module TacticGallery {
+  import Prelude.*
+  import Nat.*
+  import List.*
+
+  // =========================================================================
+  // A gallery of small, runnable proofs: one idea per theorem, ordered from
+  // "ordinary function" intuition to automation. Each proof is a plain
+  // kernel-checked term; the comment above it says what the tactic builds.
+  // =========================================================================
+
+  // --- 1. intros / exact : a proof of `P => Q` is a function ---------------
+  // Builds: (f) => (q) => (p) => f(p)(q)
+  theorem swapArgs(P: Prop, Q: Prop, R: Prop): (P => Q => R) => (Q => P => R) = by {
+    intros(f, q, p)
+    exact(f(p, q))
+  }
+
+  // --- 2. obtain / left / right : /\ is a pair, \/ is Either -----------------
+  // Builds: a `match` on the pair, then `Or.Inl(hp)`
+  theorem andImpliesOr(P: Prop, Q: Prop): (P /\ Q) => (P \/ Q) = by {
+    intro(h)
+    obtain(hp, hq) = h
+    left
+    exact(hp)
+  }
+
+  // --- 3. split : to build a pair you supply both components ----------------
+  theorem andFromBoth(P: Prop, Q: Prop, hp: P, hq: Q): Q /\ P = by {
+    split
+    exact(hq)
+    exact(hp)
+  }
+
+  // --- 4. exists(w) : an existential is a (witness, proof) pair -------------
+  // Builds: Exists.Intro(Succ(n), Eq.Refl)
+  theorem hasSuccessor(n: Nat): exists (m: Nat) => m === Nat.Succ(n) = by {
+    exists(Nat.Succ(n))
+    refl
+  }
+
+  // --- 5. refl / decide : closed by running the program ---------------------
+  theorem sixTimesSeven: 6 * 7 === 42 = by {
+    refl
+  }
+
+  theorem threeIsNotTen: ~Le(10, 3) = by {
+    decide
+  }
+
+  // --- 6. discriminate / injection : constructors are distinct and injective --
+  theorem succIsNotZero(n: Nat, h: Nat.Succ(n) === 0): False = by {
+    discriminate(h)
+  }
+
+  theorem succCancel(a: Nat, b: Nat, h: Nat.Succ(a) === Nat.Succ(b)): a === b = by {
+    injection(h, eq)
+    exact(eq)
+  }
+
+  // --- 7. contradiction : P and ~P together prove anything -------------------
+  theorem fromContradiction(P: Prop, hp: P, hnp: ~P): 1 === 2 = by {
+    contradiction
+  }
+
+  // --- 8. symmetry / trans : equality is symmetric and transitive ------------
+  theorem meetInTheMiddle(a: Nat, b: Nat, c: Nat, h1: a === b, h2: c === b): a === c = by {
+    trans(b)
+    exact(h1)
+    symmetry
+    exact(h2)
+  }
+
+  // --- 9. calc : a readable chain of equalities --------------------------------
+  theorem calcExample(a: Nat, b: Nat): (a + b) + 0 === b + a = {
+    calc {
+      (a + b) + 0
+      === a + b by { simp }
+      === b + a by { arith }
+    }
+  }
+
+  // --- 10. arith : commutative-semiring identities, 0 axioms --------------------
+  theorem squareOfSum(a: Nat, b: Nat): (a + b) * (a + b) === a * a + 2 * (a * b) + b * b = by {
+    arith
+  }
+
+  // --- 11. omega : linear arithmetic over Nat -------------------------------------
+  theorem windowBound(x: Nat, lo: Le(10, x), hi: Le(x, 20)): Le(x, 25) = by {
+    omega
+  }
+
+  // --- 12. cc : chains of equalities and function congruence ----------------------
+  theorem congruenceChain(f: Nat => Nat, a: Nat, b: Nat, c: Nat, h1: a === b, h2: f(b) === c):
+    f(f(a)) === f(c) = by {
+    cc
+  }
+
+  // --- 13. simp in h : simplify a hypothesis instead of the goal -------------------
+  theorem simplifyHypothesis(a: Nat, b: Nat, h: (a + 0) === (b + 0)): a === b = by {
+    simp in h
+    exact(h)
+  }
+
+  // --- 14. tauto / auto : propositional logic is decidable ---------------------------
+  theorem distribute(P: Prop, Q: Prop, R: Prop): (P /\ (Q \/ R)) => ((P /\ Q) \/ (P /\ R)) = by {
+    tauto
+  }
+
+  theorem swapAnd(P: Prop, Q: Prop): (P /\ Q) => (Q /\ P) = by {
+    auto
+  }
+
+  // --- 15. induction on your own recursive function ------------------------------------
+  def double(n: Nat): Nat = {
+    n match {
+      case Nat.Zero => 0
+      case Nat.Succ(pred) => Nat.Succ(Nat.Succ(double(pred)))
+    }
+  }
+
+  theorem doubleIsAddSelf(n: Nat): double(n) === n + n = by {
+    induction(n) {
+      case Zero => { refl }
+      case Succ(pred, ih) => {
+        simp
+        rewrite(ih)
+        refl
+      }
+    }
+  }
+
+  // --- 16. induction on a list: the IH is the recursive call --------------------------
+  def total(items: List[Nat]): Nat = {
+    items match {
+      case List.Nil => 0
+      case List.Cons(head, tail) => head + total(tail)
+    }
+  }
+
+  theorem totalOfAppend(first: List[Nat], second: List[Nat]):
+    total(first ++ second) === total(first) + total(second) = by {
+    induction(first) {
+      case Nil => { simp }
+      case Cons(head, tail, ih) => {
+        simp
+        rewrite(ih)
+        arith
+      }
+    }
+  }
+
+  // --- 17. by_cases + omega : branch on a Bool test, then close with arithmetic --------
+  def clamp(x: Nat, cap: Nat): Nat = {
+    if (x <= cap) { x } else { cap }
+  }
+
+  theorem clampStaysBelowCap(x: Nat, cap: Nat): Le(clamp(x, cap), cap) = by {
+    unfold(clamp)
+    by_cases(ble(x, cap), cmp) <;> { simp; omega }
+  }
+
+  #eval clamp(7, 5)
+  #eval double(21)
+}

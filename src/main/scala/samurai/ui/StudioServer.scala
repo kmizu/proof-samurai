@@ -363,6 +363,7 @@ object StudioServer {
     val candidates = List(
       CuratedItem("showcase", "Showcase: calc, arith, Queue & Sort", "Examples", "Tour of list literals, calc blocks, one-word arith, and verified Queue.", Paths.get("examples/Showcase.samurai")),
       CuratedItem("practical-proving", "Practical Proving: omega, cc, tauto & <;>", "Examples", "Linear arithmetic (omega), congruence closure (cc), intuitionistic tauto, and combinators.", Paths.get("examples/PracticalProving.samurai")),
+      CuratedItem("tactic-gallery", "Tactic Gallery: one proof per tactic", "Examples", "Seventeen small proofs covering intros, obtain, exists, discriminate, calc, arith, omega, cc, tauto, and induction on your own functions.", Paths.get("examples/TacticGallery.samurai")),
       CuratedItem("verified-io", "Verified IO: do-notation, HoareIO & Sorting Pipeline", "Examples", "Zero-axiom Free Monad IO, balance conservation, Hoare cap invariant, and verified IO sorting pipeline.", Paths.get("examples/VerifiedIO.samurai")),
       CuratedItem("advanced-recursion", "Mutual, Well-Founded (div/gcd/quickSort) & partial def", "Examples", "Mutual structural recursion, fuel-free termination_by, and sound isolated partial def.", Paths.get("examples/AdvancedRecursion.samurai")),
       CuratedItem("hello", "Hello Proof (Gentle Intro)", "Examples", "Your first inductive proofs, automation, and #eval.", Paths.get("examples/HelloProof.samurai")),

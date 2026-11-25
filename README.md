@@ -93,5 +93,5 @@ Browse online (English / 日本語) at https://kmizu.github.io/proof-samurai/ or
 - `src/main/scala/samurai/ui/` & `src/main/resources/studio/` — Embedded HTTP server and Proof Samurai Studio Web IDE
 - `src/main/scala/samurai/ai/` — Branching NDJSON proof server (`ProofSessionServer`) and multi-line REPL
 - `stdlib/` — Zero-axiom verified standard library (`Prelude`, `Nat`, `List`, `Vec`, `Tree`, `Option`, `Queue`, `Sorting`, `WellFounded`, `IO`)
-- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `VerifiedIO`)
+- `examples/` — Runnable examples (`HelloProof`, `VerifiedSort`, `SafeVec`, `Showcase`, `AdvancedRecursion`, `PracticalProving`, `TacticGallery`, `VerifiedIO`)
 - `docs/` — English and Japanese (`docs/ja/`) documentation and GitHub Pages site
